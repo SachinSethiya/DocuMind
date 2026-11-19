@@ -1,364 +1,350 @@
 "use client"
 
-import { useEffect, useMemo } from "react"
-import { useAppStore } from "@/lib/store"
-import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { getLectureStatusStyle, safeAvg, safePct, fmtDateShort, fmtDateLong } from "@/lib/utils"
+import { useAppStore } from "@/lib/store"
+import { apiService } from "@/lib/api"
+import type { Document as DocType, AnalyticsOverview } from "@/lib/types"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import {
-  BookOpen, Brain, Trophy, PlayCircle,
-  FileText, Plus, ArrowRight, Sparkles,
-  TrendingUp, CheckCircle2, Clock, BarChart3,
+  FileText,
+  UploadCloud,
+  Brain,
+  MessageSquareText,
+  Sparkles,
+  ArrowRight,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  TrendingUp,
+  FileCheck2,
 } from "lucide-react"
-import { ParticleCanvas } from "@/components/3d/ParticleCanvas"
-import { TiltCard } from "@/components/3d/TiltCard"
+import { formatDistanceToNow } from "date-fns"
+
+function formatBytes(bytes: number) {
+  if (!bytes) return "0 B"
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+function StatusBadge({ status }: { status: DocType["status"] }) {
+  if (status === "completed" || status === "ready") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+        <CheckCircle2 className="h-3 w-3" />
+        Completed
+      </span>
+    )
+  }
+  if (status === "processing" || status === "analyzing" || status === "uploading") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        {status === "analyzing" ? "Analyzing" : "Processing"}
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-500 bg-red-500/10 px-2 py-0.5 rounded-full border border-red-500/20">
+      <AlertCircle className="h-3 w-3" />
+      Failed
+    </span>
+  )
+}
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { user, lectures, fetchLectures, getUserQuizAttempts } = useAppStore()
+  const { user } = useAppStore()
+  const [docs, setDocs] = useState<DocType[]>([])
+  const [analytics, setAnalytics] = useState<AnalyticsOverview | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  useEffect(() => { fetchLectures() }, [fetchLectures])
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [docsRes, analyticsRes] = await Promise.allSettled([
+          apiService.listDocuments(),
+          apiService.getUserAnalytics(),
+        ])
+        if (docsRes.status === "fulfilled") {
+          setDocs(docsRes.value.documents || [])
+        }
+        if (analyticsRes.status === "fulfilled") {
+          setAnalytics(analyticsRes.value)
+        }
+      } catch (err) {
+        console.error("Dashboard data load error:", err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadData()
+  }, [])
+
   if (!user) return null
 
-  const attempts = getUserQuizAttempts()
-
-  // Single pass over lectures for all status counts
-  const lectureCounts = useMemo(() => {
-    const counts = { completed: 0, processing: 0, total: lectures.length }
-    for (const l of lectures as any[]) {
-      if (l.status === "completed") counts.completed++
-      else if (l.status === "processing" || l.status === "queued") counts.processing++
-    }
-    return counts
-  }, [lectures])
-
-  // Sort once, memoized
-  const recentLectures = useMemo(
-    () => [...lectures as any[]].sort((a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    ).slice(0, 5),
-    [lectures]
-  )
-
-  const avgScore       = useMemo(() => safeAvg(user.scores || []), [user.scores])
-  const bestScore      = useMemo(() => Math.max(0, ...(user.scores || [])), [user.scores])
-  const passRate       = useMemo(() => safePct(
-    (attempts as any[]).filter((a) => a.score >= 70).length, attempts.length
-  ), [attempts])
-  const completionPct  = useMemo(() => safePct(lectureCounts.completed, lectureCounts.total), [lectureCounts])
-
-  const continueLecture = recentLectures.find((l) => l.status === "completed")
-  const lastAttempt     = (attempts as any[]).at(-1)
-
-  const hour     = new Date().getHours()
+  const hour = new Date().getHours()
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"
 
-  // Reversed slice memoized
-  const recentAttempts = useMemo(
-    () => [...(attempts as any[])].reverse().slice(0, 5),
-    [attempts]
-  )
+  const totalDocs = analytics?.totalDocuments ?? docs.length
+  const completedDocs = analytics?.completedDocuments ?? docs.filter((d) => d.status === "completed" || d.status === "ready").length
+  const totalQuizzes = analytics?.totalQuizzesAttempted ?? 0
+  const avgScore = analytics?.averageScore ?? 0
 
   return (
-    <div className="relative">
-      <ParticleCanvas />
-      {/* Gradient blobs — ambient depth behind content */}
-      <div
-        className="absolute top-0 right-0 w-[480px] h-[480px] rounded-full pointer-events-none"
-        style={{ background: "radial-gradient(circle, rgba(234,179,8,0.07) 0%, transparent 65%)", zIndex: 0 }}
-        aria-hidden
-      />
-      <div
-        className="absolute bottom-0 left-0 w-80 h-80 rounded-full pointer-events-none"
-        style={{ background: "radial-gradient(circle, rgba(180,145,55,0.05) 0%, transparent 65%)", zIndex: 0 }}
-        aria-hidden
-      />
-      <div className="relative space-y-6" style={{ zIndex: 1 }}>
-
-      {/* ── Section label — Behance inspired "OVERVIEW 01" ── */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground/50">Overview</span>
-          <span className="flex-1 h-px w-10 bg-border" />
-        </div>
-        <span className="text-[10px] font-bold tracking-[0.18em] text-muted-foreground/30">01</span>
-      </div>
-
-      {/* ── Greeting ── */}
-      <div className="flex items-end justify-between gap-4 -mt-2">
+    <div className="space-y-8 max-w-6xl">
+      {/* Header & Welcome */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-3">{greeting},</p>
-          <h1
-            className="text-[48px] font-bold tracking-tight leading-[1.0]"
-            style={{ background: "linear-gradient(135deg, #1C1917 30%, #92400e 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}
-          >
-            {user.name?.split(" ")[0]}
+          <span className="text-[12px] font-semibold uppercase tracking-wider text-[#EAB308]">
+            {greeting}, {user.name}
+          </span>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground mt-0.5">
+            DocuMind Intelligence Hub
           </h1>
-          <p className="text-[13px] text-muted-foreground mt-3">
-            {lectureCounts.completed > 0
-              ? `${lectureCounts.completed} of ${lectureCounts.total} lectures completed`
-              : "Upload your first lecture to begin."}
-            {lectureCounts.processing > 0 && ` · ${lectureCounts.processing} processing`}
+          <p className="text-sm text-muted-foreground mt-1">
+            Interact with your documents, generate quizzes, and monitor learning retention.
           </p>
         </div>
-        <Button
-          className="bg-foreground text-background hover:bg-foreground/90 h-9 px-5 text-[13px] font-semibold rounded-lg shadow-warm shrink-0 mb-1"
-          onClick={() => router.push("/dashboard/lectures")}
-        >
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          New Lecture
-        </Button>
-      </div>
 
-      {/* ── Achievement strip (700+ / 85% / 2x style) ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 divide-x-0 sm:divide-x divide-border rounded-2xl border border-border bg-card shadow-warm overflow-hidden">
-        {([
-          { value: String(lectureCounts.total || 0), label: "Lectures Uploaded" },
-          { value: `${avgScore}%`,                   label: "Average Score"     },
-          { value: String(attempts.length || 0),     label: "Quiz Attempts"     },
-        ]).map((s) => (
-          <div key={s.label} className="py-5 px-6 text-center">
-            <p className="text-[36px] font-bold tracking-tight text-foreground leading-none">{s.value}</p>
-            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/60 mt-2">{s.label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* ── 4 stat cards — editorial number-first ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {([
-          { label: "Lectures",   value: lectureCounts.total,      sub: `${lectureCounts.completed} done`,  progress: completionPct,          href: "/dashboard/lectures",  accent: "text-foreground"   },
-          { label: "Avg Score",  value: `${avgScore}%`,            sub: `Best ${bestScore}%`,               progress: avgScore,               href: "/dashboard/scores",    accent: "text-[#D97706]"    },
-          { label: "Attempts",   value: attempts.length,           sub: `${passRate}% pass rate`,           progress: passRate,               href: "/dashboard/analytics", accent: "text-foreground"   },
-          { label: "Attendance", value: `${user.attendance || 0}%`,sub: "This semester",                    progress: user.attendance || 0,   href: "/dashboard/progress",  accent: "text-foreground"   },
-        ] as const).map((s) => (
-          <TiltCard key={s.label}>
-            <button
-              onClick={() => router.push(s.href)}
-              className="group w-full text-left px-5 pt-5 pb-4 rounded-2xl bg-card border border-border shadow-warm hover:shadow-warm-md hover:border-primary/30 transition-all duration-200"
-            >
-              <p className={`text-[38px] font-bold tracking-tight leading-none ${s.accent}`}>{s.value}</p>
-              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/55 mt-2.5">{s.label}</p>
-              <p className="text-[11px] text-muted-foreground mt-1 mb-4">{s.sub}</p>
-              {/* Thin progress line — Behance style */}
-              <div className="h-[2px] bg-border rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary/50 rounded-full transition-all duration-700"
-                  style={{ width: `${s.progress}%` }}
-                />
-              </div>
-            </button>
-          </TiltCard>
-        ))}
-      </div>
-
-      {/* ── Continue Learning ── */}
-      {continueLecture && (
-        <div
-          className="flex items-center gap-4 p-5 rounded-2xl bg-card border border-border shadow-warm hover:border-primary/30 hover:shadow-warm-md transition-all duration-150 cursor-pointer"
-          onClick={() => router.push(`/dashboard/lectures/${continueLecture._id}`)}
-        >
-          <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-            <PlayCircle className="h-6 w-6 text-primary" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[11px] font-bold text-primary uppercase tracking-widest mb-1">Continue Learning</p>
-            <p className="text-[15px] font-semibold text-foreground truncate">{continueLecture.title}</p>
-            <p className="text-[12px] text-muted-foreground">{fmtDateLong(continueLecture.createdAt)}</p>
-          </div>
-          <div className="flex gap-2 shrink-0">
-            <Button size="sm"
-              className="bg-foreground text-background hover:bg-foreground/90 h-8 px-4 text-[12px] rounded-lg"
-              onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/summaries?lecture=${continueLecture._id}`) }}>
-              <FileText className="mr-1.5 h-3 w-3" />Summary
-            </Button>
-            <Button size="sm" variant="outline"
-              className="h-8 px-4 text-[12px] rounded-lg border-border text-muted-foreground"
-              onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/quizzes?lecture=${continueLecture._id}`) }}>
-              <Brain className="mr-1.5 h-3 w-3" />Quiz
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* ── AI Insight ── */}
-      {lastAttempt && (
-        <div className="flex items-center gap-4 p-4 rounded-2xl bg-primary/8 border border-primary/20">
-          <div className="h-10 w-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
-            <Sparkles className="h-5 w-5 text-primary" />
-          </div>
-          <div className="flex-1">
-            <p className="text-[14px] font-semibold text-foreground">
-              Last quiz score:{" "}
-              <span className={lastAttempt.score >= 70 ? "text-emerald-600" : "text-red-500"}>
-                {lastAttempt.score}%
-              </span>
-            </p>
-            <p className="text-[12px] text-muted-foreground mt-0.5">
-              {lastAttempt.score >= 70
-                ? "Good result — check Analytics to see your peer ranking."
-                : "Below pass threshold — review the summary and retry."}
-            </p>
-          </div>
-          <Button variant="outline" size="sm"
-            className="h-8 px-4 text-[12px] rounded-lg border-primary/30 text-primary hover:bg-primary/10 shrink-0"
-            onClick={() => router.push("/dashboard/analytics")}>
-            Analytics <ArrowRight className="ml-1 h-3 w-3" />
+        <div className="flex items-center gap-2.5 shrink-0">
+          <Button
+            onClick={() => router.push("/dashboard/upload")}
+            className="bg-[#EAB308] text-black hover:bg-[#EAB308]/90 font-semibold h-9 px-4 text-xs rounded-xl shadow-sm"
+          >
+            <UploadCloud className="h-4 w-4 mr-1.5" />
+            Upload Document
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => router.push("/dashboard/chat")}
+            className="h-9 px-3.5 text-xs rounded-xl border-border hover:bg-accent"
+          >
+            <MessageSquareText className="h-4 w-4 mr-1.5 text-[#EAB308]" />
+            Ask AI
           </Button>
         </div>
-      )}
-
-      {/* ── Section label ── */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground/50">Activity</span>
-          <span className="h-px w-10 bg-border" />
-        </div>
-        <span className="text-[10px] font-bold tracking-[0.18em] text-muted-foreground/30">02</span>
       </div>
 
-      {/* ── Main grid ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 -mt-2">
+      {/* Quick Stats Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="rounded-2xl border border-border bg-card p-4.5 space-y-1 shadow-sm">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-medium">Total Documents</span>
+            <div className="h-7 w-7 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center">
+              <FileText className="h-3.5 w-3.5" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-foreground">{totalDocs}</div>
+          <p className="text-[11px] text-muted-foreground">{completedDocs} processed & indexed</p>
+        </div>
 
-        {/* Lecture list */}
-        <div className="lg:col-span-2 space-y-3">
+        <div className="rounded-2xl border border-border bg-card p-4.5 space-y-1 shadow-sm">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-medium">Processed Status</span>
+            <div className="h-7 w-7 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+              <FileCheck2 className="h-3.5 w-3.5" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-foreground">
+            {totalDocs > 0 ? `${Math.round((completedDocs / totalDocs) * 100)}%` : "0%"}
+          </div>
+          <p className="text-[11px] text-muted-foreground">Ready for AI interaction</p>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card p-4.5 space-y-1 shadow-sm">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-medium">Quizzes Completed</span>
+            <div className="h-7 w-7 rounded-lg bg-purple-500/10 text-purple-500 flex items-center justify-center">
+              <Brain className="h-3.5 w-3.5" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-foreground">{totalQuizzes}</div>
+          <p className="text-[11px] text-muted-foreground">
+            {analytics?.totalQuestionsAttempted ?? 0} questions attempted
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card p-4.5 space-y-1 shadow-sm">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-medium">Average Quiz Score</span>
+            <div className="h-7 w-7 rounded-lg bg-[#EAB308]/15 text-[#EAB308] flex items-center justify-center">
+              <TrendingUp className="h-3.5 w-3.5" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-foreground">
+            {totalQuizzes > 0 ? `${avgScore}%` : "—"}
+          </div>
+          <p className="text-[11px] text-muted-foreground">Overall learning accuracy</p>
+        </div>
+      </div>
+
+      {/* AI Recommendation Alert if weak topics exist */}
+      {analytics?.recommendations && analytics.recommendations.length > 0 && (
+        <div className="rounded-2xl border border-[#EAB308]/30 bg-[#EAB308]/5 p-4 flex items-start gap-3">
+          <Sparkles className="h-5 w-5 text-[#EAB308] shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[#D97706]">
+              DocuMind Study Recommendation
+            </h4>
+            <p className="text-xs text-foreground/90 leading-relaxed">
+              {analytics.recommendations[0]}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Split: Recent Documents & Recent Quizzes */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Recent Documents (2 Cols) */}
+        <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-[15px] font-semibold text-foreground">Recent Lectures</h2>
-            <button
-              onClick={() => router.push("/dashboard/lectures")}
-              className="text-[12px] text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors"
+            <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+              <FileText className="h-4 w-4 text-[#EAB308]" />
+              Recent Documents
+            </h2>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/dashboard/documents")}
+              className="text-xs text-[#EAB308] hover:bg-[#EAB308]/10 h-8"
             >
-              View all <ArrowRight className="h-3 w-3" />
-            </button>
+              View all ({docs.length})
+              <ArrowRight className="h-3 w-3 ml-1" />
+            </Button>
           </div>
 
-          {recentLectures.length > 0 ? (
-            <div className="rounded-2xl bg-card border border-border shadow-warm overflow-hidden divide-y divide-border">
-              {recentLectures.map((lec) => (
+          {loading ? (
+            <div className="p-8 text-center text-muted-foreground text-xs">
+              <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2 text-[#EAB308]" />
+              Loading your documents...
+            </div>
+          ) : docs.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border p-10 text-center space-y-3 bg-card/50">
+              <div className="h-10 w-10 rounded-xl bg-accent flex items-center justify-center mx-auto text-muted-foreground">
+                <UploadCloud className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-foreground">No documents uploaded yet</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Upload a PDF or DOCX file to experience AI summaries, Q&A, and quizzes.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => router.push("/dashboard/upload")}
+                className="bg-[#EAB308] text-black hover:bg-[#EAB308]/90 font-semibold text-xs h-8"
+              >
+                Upload your first document
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {docs.slice(0, 5).map((doc) => (
                 <div
-                  key={lec._id}
-                  className="group flex items-center gap-4 px-5 py-4 hover:bg-secondary/50 cursor-pointer transition-colors"
-                  onClick={() => router.push(`/dashboard/lectures/${lec._id}`)}
+                  key={doc._id}
+                  onClick={() => router.push(`/dashboard/documents/${doc._id}`)}
+                  className="group flex items-center justify-between p-3.5 rounded-xl border border-border bg-card hover:border-[#EAB308]/40 hover:shadow-warm transition-all cursor-pointer"
                 >
-                  <div className="h-10 w-10 rounded-xl bg-secondary flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
-                    <BookOpen className="h-[18px] w-[18px] text-muted-foreground group-hover:text-primary transition-colors" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-semibold text-foreground truncate">{lec.title}</p>
-                    <p className="text-[12px] text-muted-foreground">{fmtDateShort(lec.createdAt)}</p>
-                  </div>
-                  <div className="flex items-center gap-2.5 shrink-0">
-                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border capitalize ${getLectureStatusStyle(lec.status)}`}>
-                      {lec.status}
-                    </span>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {[
-                        { label: "Summary", icon: FileText, path: `/dashboard/summaries?lecture=${lec._id}` },
-                        { label: "Quiz",    icon: Brain,    path: `/dashboard/quizzes?lecture=${lec._id}` },
-                      ].map((btn) => (
-                        <button key={btn.label}
-                          className="h-7 px-2.5 text-[11px] bg-secondary border border-border rounded-lg text-muted-foreground hover:text-primary hover:border-primary/30 transition-colors flex items-center gap-1"
-                          onClick={(e) => { e.stopPropagation(); router.push(btn.path) }}
-                        >
-                          <btn.icon className="h-3 w-3" /> {btn.label}
-                        </button>
-                      ))}
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-9 w-9 rounded-lg bg-accent flex items-center justify-center shrink-0 group-hover:bg-[#EAB308]/10 transition-colors">
+                      <FileText className="h-4.5 w-4.5 text-[#EAB308]" />
                     </div>
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-semibold text-foreground truncate max-w-xs sm:max-w-md">
+                        {doc.title}
+                      </h4>
+                      <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
+                        <span className="uppercase font-medium">{doc.fileType}</span>
+                        <span>•</span>
+                        <span>{formatBytes(doc.fileSize)}</span>
+                        {doc.pageCount > 0 && (
+                          <>
+                            <span>•</span>
+                            <span>{doc.pageCount} pages</span>
+                          </>
+                        )}
+                        <span>•</span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-2.5 w-2.5" />
+                          {formatDistanceToNow(new Date(doc.createdAt), { addSuffix: true })}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 shrink-0">
+                    <StatusBadge status={doc.status} />
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground transition-colors hidden sm:block" />
                   </div>
                 </div>
               ))}
-            </div>
-          ) : (
-            <div className="relative flex flex-col items-center justify-center py-16 rounded-2xl bg-card border border-dashed border-border gap-3 overflow-hidden">
-              <div className="bg-dot-grid absolute inset-0 opacity-40 pointer-events-none" aria-hidden />
-              <div className="relative z-10 flex flex-col items-center gap-3">
-                <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-100 border border-amber-200/60 flex items-center justify-center shadow-warm">
-                  <BookOpen className="h-6 w-6 text-amber-500" />
-                </div>
-                <p className="text-[14px] font-medium text-muted-foreground">No lectures yet</p>
-                <Button size="sm"
-                  className="bg-foreground text-background hover:bg-foreground/90 h-8 px-4 text-[12px] rounded-lg"
-                  onClick={() => router.push("/dashboard/lectures")}>
-                  <Plus className="mr-1.5 h-3 w-3" /> Upload first lecture
-                </Button>
-              </div>
             </div>
           )}
         </div>
 
-        {/* Right column */}
+        {/* Recent Quiz Activity (1 Col) */}
         <div className="space-y-4">
-
-          {/* Quiz Activity */}
-          <div>
-            <h2 className="text-[15px] font-semibold text-foreground flex items-center gap-2 mb-3">
-              <Clock className="h-4 w-4 text-muted-foreground/60" />
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+              <Brain className="h-4 w-4 text-[#EAB308]" />
               Recent Quizzes
             </h2>
-            <div className="rounded-2xl bg-card border border-border shadow-warm overflow-hidden">
-              {recentAttempts.length > 0 ? (
-                <div className="divide-y divide-border">
-                  {recentAttempts.map((a, i) => (
-                    <div key={a.id || i} className="flex items-center justify-between px-4 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${a.score >= 70 ? "bg-emerald-50" : "bg-red-50"}`}>
-                          {a.score >= 70
-                            ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                            : <TrendingUp    className="h-4 w-4 text-red-500" />
-                          }
-                        </div>
-                        <div>
-                          <p className="text-[13px] font-semibold text-foreground">{a.score >= 70 ? "Passed" : "Needs review"}</p>
-                          <p className="text-[11px] text-muted-foreground">
-                            {a.completedAt ? fmtDateShort(a.completedAt) : "Recently"}
-                          </p>
-                        </div>
-                      </div>
-                      <span className={`text-[13px] font-bold ${a.score >= 70 ? "text-emerald-600" : "text-red-500"}`}>
-                        {a.score}%
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-10 gap-2">
-                  <Brain className="h-9 w-9 text-muted-foreground/20" />
-                  <p className="text-[12px] text-muted-foreground">No quizzes yet</p>
-                </div>
-              )}
-            </div>
-            {recentAttempts.length > 0 && (
-              <button
-                className="w-full mt-2 text-[12px] text-muted-foreground hover:text-primary transition-colors py-1"
-                onClick={() => router.push("/dashboard/analytics")}
-              >
-                View full analytics →
-              </button>
-            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/dashboard/analytics")}
+              className="text-xs text-muted-foreground hover:text-foreground h-8"
+            >
+              Analytics
+            </Button>
           </div>
 
-          {/* Quick links */}
-          <div>
-            <h2 className="text-[15px] font-semibold text-foreground mb-3">Quick Actions</h2>
-            <div className="space-y-2">
-              {([
-                { label: "Browse all quizzes", icon: Brain,    href: "/dashboard/quizzes" },
-                { label: "View summaries",      icon: FileText, href: "/dashboard/summaries" },
-                { label: "Check leaderboard",   icon: Trophy,   href: "/dashboard/analytics" },
-              ] as const).map((q) => (
-                <button key={q.href} onClick={() => router.push(q.href)}
-                  className="group w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-card border border-border shadow-warm text-left hover:border-primary/30 hover:shadow-warm-md transition-all duration-150"
+          <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+            {!analytics?.recentActivity || analytics.recentActivity.length === 0 ? (
+              <div className="py-8 text-center space-y-2">
+                <Brain className="h-7 w-7 text-muted-foreground/40 mx-auto" />
+                <p className="text-xs text-muted-foreground">No quiz attempts recorded yet.</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => router.push("/dashboard/quizzes")}
+                  className="text-xs h-7 border-border mt-1"
                 >
-                  <q.icon className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                  <span className="text-[13px] font-medium text-foreground">{q.label}</span>
-                  <ArrowRight className="h-3.5 w-3.5 text-transparent group-hover:text-muted-foreground ml-auto transition-colors" />
-                </button>
-              ))}
-            </div>
+                  Generate a Quiz
+                </Button>
+              </div>
+            ) : (
+              <div className="divide-y divide-border/60">
+                {analytics.recentActivity.map((act) => (
+                  <div key={act.id} className="py-2.5 first:pt-0 last:pb-0 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-foreground truncate max-w-[180px]">
+                        {act.documentTitle}
+                      </p>
+                      <span
+                        className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                          act.score >= 70
+                            ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+                            : "bg-amber-500/10 text-amber-500 border border-amber-500/20"
+                        }`}
+                      >
+                        {act.score}%
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span className="capitalize">{act.difficulty} difficulty</span>
+                      <span>{formatDistanceToNow(new Date(act.completedAt), { addSuffix: true })}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
-      </div>
       </div>
     </div>
   )

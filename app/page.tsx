@@ -6,112 +6,136 @@ import { useAppStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
 import {
   ArrowRight,
-  BarChart3,
-  BookOpen,
+  FileText,
   Brain,
   CheckCircle,
-  FileText,
-  GraduationCap,
-  Mic,
-  PlayCircle,
   Sparkles,
+  Search,
+  BookOpen,
+  LineChart,
+  Layers,
+  HelpCircle,
+  ShieldCheck,
+  Zap,
 } from "lucide-react"
 
 function ProductPreview() {
   return (
     <div className="w-full max-w-5xl mx-auto mt-14 px-4 sm:px-6">
       <div className="rounded-2xl border border-border shadow-warm-md overflow-hidden bg-card">
-        <div className="h-10 bg-secondary border-b border-border flex items-center gap-2 px-4">
-          <div className="h-2.5 w-2.5 rounded-full bg-red-400/60" />
-          <div className="h-2.5 w-2.5 rounded-full bg-amber-400/60" />
-          <div className="h-2.5 w-2.5 rounded-full bg-emerald-400/60" />
-          <span className="ml-3 text-[11px] text-muted-foreground font-medium">
-            Lecture Lens - Dashboard
+        {/* Browser Top Bar */}
+        <div className="h-10 bg-secondary border-b border-border flex items-center justify-between px-4">
+          <div className="flex items-center gap-2">
+            <div className="h-2.5 w-2.5 rounded-full bg-red-400/70" />
+            <div className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
+            <div className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
+            <span className="ml-3 text-[11px] text-muted-foreground font-medium flex items-center gap-1.5">
+              <FileText className="h-3 w-3 text-[#EAB308]" />
+              DocuMind Workspace — Attention_Is_All_You_Need.pdf
+            </span>
+          </div>
+          <span className="text-[10px] bg-emerald-500/10 text-emerald-600 font-semibold px-2 py-0.5 rounded-full border border-emerald-500/20">
+            Analysis Completed · 15 Pages
           </span>
         </div>
 
-        <div className="flex" style={{ height: 340 }}>
-          <div className="w-44 border-r border-border bg-sidebar shrink-0 p-3 space-y-1 hidden sm:block">
-            {["Home", "Lectures", "Summaries", "Quizzes", "Scores", "Analytics"].map(
-              (item, index) => (
-                <div
-                  key={item}
-                  className={`flex items-center gap-2 px-2 py-1.5 rounded-lg ${
-                    index === 0 ? "bg-amber-400/10" : ""
-                  }`}
-                >
-                  <div
-                    className={`h-3 w-3 rounded ${
-                      index === 0 ? "bg-amber-400" : "bg-muted-foreground/30"
-                    }`}
-                  />
-                  <span
-                    className={`text-[11px] ${
-                      index === 0 ? "text-amber-500 font-semibold" : "text-muted-foreground"
-                    }`}
-                  >
-                    {item}
-                  </span>
-                </div>
-              )
-            )}
+        {/* Workspace Mockup */}
+        <div className="flex flex-col md:flex-row" style={{ minHeight: 360 }}>
+          {/* Sidebar */}
+          <div className="w-full md:w-52 border-b md:border-b-0 md:border-r border-border bg-sidebar shrink-0 p-3.5 space-y-1.5">
+            {[
+              { name: "Overview", icon: Layers, active: true },
+              { name: "Executive Summary", icon: FileText, active: false },
+              { name: "Topics & Keywords", icon: Sparkles, active: false },
+              { name: "Ask AI", icon: Search, active: false },
+              { name: "Quiz Generator", icon: Brain, active: false },
+              { name: "My Performance", icon: LineChart, active: false },
+            ].map((tab) => (
+              <div
+                key={tab.name}
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-[12px] font-medium transition-colors ${
+                  tab.active
+                    ? "bg-[#EAB308]/15 text-[#EAB308] font-semibold"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                }`}
+              >
+                <tab.icon className={`h-3.5 w-3.5 ${tab.active ? "text-[#EAB308]" : "text-muted-foreground"}`} />
+                <span>{tab.name}</span>
+              </div>
+            ))}
           </div>
 
-          <div className="flex-1 p-5 space-y-4 overflow-hidden">
-            <div className="flex items-center justify-between">
+          {/* Main Pane */}
+          <div className="flex-1 p-5 space-y-4 overflow-hidden bg-background">
+            <div className="flex items-center justify-between border-b border-border/60 pb-3">
               <div>
-                <div className="h-3 w-20 bg-muted-foreground/20 rounded mb-1.5" />
-                <div className="h-5 w-36 bg-foreground/80 rounded" />
+                <span className="text-[10.5px] uppercase font-bold tracking-wider text-[#EAB308]">
+                  AI Document Intelligence
+                </span>
+                <h3 className="text-base font-semibold text-foreground">
+                  Attention Is All You Need — Vaswani et al.
+                </h3>
               </div>
-              <div className="h-7 w-24 bg-foreground/80 rounded-lg" />
+              <div className="flex gap-2">
+                <span className="text-[11px] bg-secondary px-2.5 py-1 rounded-lg border border-border text-muted-foreground">
+                  PDF · 1.2 MB
+                </span>
+                <span className="text-[11px] bg-[#EAB308]/10 text-[#EAB308] font-medium px-2.5 py-1 rounded-lg border border-[#EAB308]/20">
+                  32 Vector Chunks
+                </span>
+              </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { label: "Lectures", value: "12", tone: "bg-foreground/8" },
-                { label: "Avg Score", value: "84%", tone: "bg-amber-400/10" },
-                { label: "Attempts", value: "28", tone: "bg-foreground/8" },
-              ].map((stat) => (
-                <div
-                  key={stat.label}
-                  className={`rounded-xl border border-border p-3 ${stat.tone}`}
-                >
-                  <div className="h-3 w-3 rounded bg-muted-foreground/25 mb-2" />
-                  <div className="text-[18px] font-bold text-foreground/80">{stat.value}</div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">{stat.label}</div>
-                </div>
-              ))}
+            {/* Feature Cards Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-3.5 rounded-xl border border-border bg-card space-y-1">
+                <span className="text-[10px] uppercase font-semibold text-muted-foreground">Key Concept</span>
+                <p className="text-xs font-semibold text-foreground">Self-Attention Mechanism</p>
+                <p className="text-[11px] text-muted-foreground line-clamp-2">
+                  Connects all positions of input sequences with constant operations.
+                </p>
+                <span className="inline-block text-[10px] text-[#EAB308] font-mono mt-1">Ref: Page 3</span>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-border bg-card space-y-1">
+                <span className="text-[10px] uppercase font-semibold text-muted-foreground">Grounded Chat</span>
+                <p className="text-xs font-semibold text-foreground">Multi-Head Attention</p>
+                <p className="text-[11px] text-muted-foreground line-clamp-2">
+                  Jointly attends to information from different representation subspaces.
+                </p>
+                <span className="inline-block text-[10px] text-[#EAB308] font-mono mt-1">Ref: Page 5</span>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-border bg-card space-y-1">
+                <span className="text-[10px] uppercase font-semibold text-muted-foreground">Active Quiz</span>
+                <p className="text-xs font-semibold text-foreground">Difficulty: Medium (88%)</p>
+                <p className="text-[11px] text-muted-foreground line-clamp-2">
+                  5 MCQs & 2 descriptive questions evaluated with instant AI feedback.
+                </p>
+                <span className="inline-block text-[10px] text-emerald-500 font-mono mt-1">Passed (88/100)</span>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              {[
-                { title: "Machine Learning - Lecture 3", status: "completed" },
-                { title: "Data Structures and Algorithms", status: "processing" },
-                { title: "Operating Systems Overview", status: "completed" },
-              ].map((lecture) => (
-                <div
-                  key={lecture.title}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-secondary/50 border border-border"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="h-7 w-7 rounded-lg bg-muted flex items-center justify-center">
-                      <PlayCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                    </div>
-                    <span className="text-[12px] font-medium text-foreground/80">
-                      {lecture.title}
-                    </span>
-                  </div>
+            {/* Extracted Keywords Pills */}
+            <div className="pt-1">
+              <p className="text-[11px] font-semibold text-muted-foreground mb-2">Extracted Keywords:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  "Self-Attention",
+                  "Positional Encoding",
+                  "Encoder-Decoder",
+                  "Feed-Forward",
+                  "BLEU Score",
+                  "Layer Normalization",
+                ].map((k) => (
                   <span
-                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                      lecture.status === "completed"
-                        ? "text-emerald-700 bg-emerald-50 border-emerald-100"
-                        : "text-amber-600 bg-amber-50 border-amber-100"
-                    }`}
+                    key={k}
+                    className="text-[11px] px-2.5 py-0.5 rounded-full bg-secondary text-foreground border border-border font-medium"
                   >
-                    {lecture.status}
+                    #{k}
                   </span>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -131,17 +155,18 @@ export default function HomePage() {
   }, [isAuthenticated, router])
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
+    <div className="min-h-screen bg-background text-foreground selection:bg-[#EAB308]/20 selection:text-foreground">
+      {/* Top Navbar */}
+      <header className="sticky top-0 z-50 bg-background/90 backdrop-blur-md border-b border-border">
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
-              <GraduationCap className="h-3.5 w-3.5 text-primary-foreground" />
+            <div className="h-7 w-7 rounded-lg bg-[#EAB308] flex items-center justify-center shadow-sm">
+              <FileText className="h-4 w-4 text-black" />
             </div>
-            <span className="text-[14px] font-semibold tracking-tight">Lecture Lens</span>
+            <span className="text-[15px] font-bold tracking-tight">DocuMind</span>
           </div>
 
-          <nav className="flex items-center gap-1.5">
+          <nav className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="sm"
@@ -152,7 +177,7 @@ export default function HomePage() {
             </Button>
             <Button
               size="sm"
-              className="bg-foreground text-background hover:bg-foreground/90 text-[13px] h-8 px-4 rounded-lg"
+              className="bg-[#EAB308] text-black hover:bg-[#EAB308]/90 font-semibold text-[13px] h-8 px-4 rounded-lg"
               onClick={() => router.push("/auth/signup")}
             >
               Get started
@@ -161,47 +186,50 @@ export default function HomePage() {
         </div>
       </header>
 
-      <section className="pt-14 pb-0 px-6">
+      {/* Hero Section */}
+      <section className="pt-16 pb-6 px-6">
         <div className="max-w-3xl mx-auto text-center">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 mb-6 rounded-full bg-primary/10 border border-primary/20 text-[12px] font-semibold text-primary">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 mb-6 rounded-full bg-[#EAB308]/12 border border-[#EAB308]/30 text-[12px] font-semibold text-[#EAB308]">
             <Sparkles className="h-3 w-3" />
-            AI-powered academic platform
+            AI-Powered Document Intelligence Platform
           </div>
 
-          <h1 className="text-[48px] sm:text-[60px] lg:text-[72px] font-bold tracking-[-0.04em] leading-[1.04] mb-5 text-foreground">
-            Turn any lecture into
+          <h1 className="text-[44px] sm:text-[58px] lg:text-[68px] font-bold tracking-[-0.04em] leading-[1.05] mb-5 text-foreground">
+            Your Documents,
             <br />
-            <span className="text-primary">structured knowledge</span>
+            <span className="text-[#EAB308]">Smarter Than Ever</span>
           </h1>
 
           <p className="text-[16px] sm:text-[18px] text-muted-foreground max-w-xl mx-auto leading-relaxed mb-8">
-            Upload video, audio, or slides. Get transcripts, concise summaries,
-            and self-assessment quizzes in one workflow.
+            Upload any document, uncover important insights, ask AI-powered questions,
+            and turn information into knowledge.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
             <Button
               size="lg"
-              className="bg-foreground text-background hover:bg-foreground/90 h-11 px-8 text-[14px] font-semibold rounded-xl shadow-warm-md transition-all hover:scale-[1.01]"
+              className="bg-[#EAB308] text-black hover:bg-[#EAB308]/90 h-11 px-8 text-[14px] font-semibold rounded-xl shadow-warm-md transition-all hover:scale-[1.01]"
               onClick={() => router.push("/auth/signup")}
             >
-              Start for free
+              Get Started
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
             <Button
               size="lg"
               variant="outline"
               className="h-11 px-6 text-[14px] rounded-xl border-border text-muted-foreground hover:text-foreground"
-              onClick={() => router.push("/auth/login")}
+              onClick={() => {
+                document.getElementById("features")?.scrollIntoView({ behavior: "smooth" })
+              }}
             >
-              Sign in to dashboard
+              Explore Features
             </Button>
           </div>
 
-          <div className="flex items-center justify-center gap-6">
-            {["Free to start", "No credit card", "AI-powered"].map((item) => (
+          <div className="flex flex-wrap items-center justify-center gap-6">
+            {["PDF & DOCX Support", "Exact Page Citations", "AI Quiz Generator", "Performance Analytics"].map((item) => (
               <div key={item} className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                <CheckCircle className="h-3.5 w-3.5 text-primary shrink-0" />
+                <CheckCircle className="h-3.5 w-3.5 text-[#EAB308] shrink-0" />
                 {item}
               </div>
             ))}
@@ -211,153 +239,141 @@ export default function HomePage() {
         <ProductPreview />
       </section>
 
-      <section className="pt-20 pb-16 px-6 mt-4 border-t border-border">
+      {/* Feature Sections */}
+      <section id="features" className="py-20 px-6 border-t border-border bg-secondary/20">
         <div className="max-w-5xl mx-auto">
-          <div className="mb-10">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-primary mb-3">
-              How it works
+          <div className="mb-12 text-center">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-[#EAB308] mb-2">
+              Transform Your Workflow
             </p>
-            <h2 className="text-[28px] sm:text-[34px] font-bold tracking-tight">
-              From raw lecture to study-ready
+            <h2 className="text-[30px] sm:text-[36px] font-bold tracking-tight">
+              Turn Documents into Interactive Knowledge
             </h2>
-            <p className="text-muted-foreground mt-2 text-[15px]">
-              Three steps. Fully connected.
+            <p className="text-muted-foreground mt-2 text-[15px] max-w-lg mx-auto">
+              Everything you need to digest complex papers, manuals, books, and study material.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-5">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {[
               {
-                number: "01",
-                icon: Mic,
-                title: "Upload your lecture",
-                desc: "Drop a video, audio file, slides, or paste a YouTube link.",
+                icon: Layers,
+                title: "Intelligent Document Analysis",
+                desc: "Automatically extracts document structure, headings, definitions, key facts, and core concepts with page preservation.",
               },
               {
-                number: "02",
-                icon: Brain,
-                title: "AI processes it",
-                desc: "Transcription, OCR, summarization, and quiz generation run automatically.",
-              },
-              {
-                number: "03",
                 icon: FileText,
-                title: "Study and review",
-                desc: "Read smart summaries, revisit transcripts, and take quick quizzes.",
+                title: "AI-Powered Summaries",
+                desc: "Generate short executive summaries, comprehensive detailed narratives, or section-wise chapter breakdowns with map-reduce scaling.",
               },
-            ].map((step) => (
+              {
+                icon: Search,
+                title: "Smart Document Chat",
+                desc: "Ask any question in natural language and receive grounded answers complete with verified source page citations.",
+              },
+              {
+                icon: Brain,
+                title: "Automated Quiz Generation",
+                desc: "Create customizable quizzes (Easy, Medium, Hard) featuring both multiple-choice and open-ended descriptive questions.",
+              },
+              {
+                icon: LineChart,
+                title: "Learning Performance Tracking",
+                desc: "Monitor accuracy trends, topic mastery, and weak areas with data-driven practice recommendations.",
+              },
+              {
+                icon: ShieldCheck,
+                title: "Strict User Data Isolation",
+                desc: "Your uploaded documents and conversations are completely private and indexed strictly in your isolated workspace.",
+              },
+            ].map((f) => (
               <div
-                key={step.number}
-                className="bg-card rounded-2xl p-6 border border-border shadow-warm group hover:border-primary/30 transition-colors duration-150"
+                key={f.title}
+                className="group p-5 rounded-2xl bg-card border border-border shadow-warm hover:border-[#EAB308]/40 hover:shadow-warm-md transition-all duration-150"
               >
-                <span className="text-[10px] font-bold text-primary/50 uppercase tracking-widest">
-                  {step.number}
-                </span>
-                <div className="mt-4 mb-4 h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
-                  <step.icon className="h-5 w-5 text-primary" />
+                <div className="h-10 w-10 rounded-xl bg-[#EAB308]/12 flex items-center justify-center shrink-0 mb-4 group-hover:bg-[#EAB308]/20 transition-colors">
+                  <f.icon className="h-5 w-5 text-[#EAB308]" />
                 </div>
-                <h3 className="font-semibold text-[15px] mb-2">{step.title}</h3>
-                <p className="text-[13px] text-muted-foreground leading-relaxed">{step.desc}</p>
+                <h3 className="font-semibold text-[15px] mb-2 text-foreground">{f.title}</h3>
+                <p className="text-[13px] text-muted-foreground leading-relaxed">{f.desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="py-16 px-6 border-t border-border bg-secondary/30">
+      {/* Workflow Steps */}
+      <section className="py-20 px-6 border-t border-border">
         <div className="max-w-5xl mx-auto">
-          <div className="mb-10">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-primary mb-3">
-              Platform features
+          <div className="mb-12">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-[#EAB308] mb-2">
+              Simple 3-Step Process
             </p>
             <h2 className="text-[28px] sm:text-[34px] font-bold tracking-tight">
-              Everything to learn smarter
+              How DocuMind Works
             </h2>
           </div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid md:grid-cols-3 gap-6">
             {[
               {
-                icon: BookOpen,
-                title: "Multi-format upload",
-                desc: "Video, audio, slides, PDFs, or YouTube links.",
+                step: "01",
+                title: "Upload Document",
+                desc: "Drag and drop any PDF or Microsoft Word DOCX document. File sizes up to 50 MB supported.",
               },
               {
-                icon: Mic,
-                title: "AI transcription",
-                desc: "Speech-to-text with timestamped lecture output.",
+                step: "02",
+                title: "Automatic Intelligence",
+                desc: "DocuMind parses the text, extracts key topics, tags vocabulary, builds vector indexes, and summarizes chapters.",
               },
               {
-                icon: Brain,
-                title: "Layered summaries",
-                desc: "Compare local model output with OpenAI output.",
+                step: "03",
+                title: "Interact & Test Yourself",
+                desc: "Chat with the document, navigate cited pages, and take tailored difficulty-based quizzes to reinforce learning.",
               },
-              {
-                icon: FileText,
-                title: "Auto-generated quizzes",
-                desc: "MCQs created directly from lecture content.",
-              },
-              {
-                icon: BarChart3,
-                title: "Performance analytics",
-                desc: "Track scores, patterns, and weak areas over time.",
-              },
-              {
-                icon: Sparkles,
-                title: "Queue-aware pipeline",
-                desc: "Background processing when Redis is available, inline fallback when it is not.",
-              },
-            ].map((feature) => (
-              <div
-                key={feature.title}
-                className="group flex gap-4 p-5 rounded-xl bg-card border border-border shadow-warm hover:border-primary/25 hover:shadow-warm-md transition-all duration-150 cursor-default"
-              >
-                <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/15 transition-colors">
-                  <feature.icon className="h-4.5 w-4.5 text-primary" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-[14px] mb-1">{feature.title}</h3>
-                  <p className="text-[13px] text-muted-foreground leading-relaxed">
-                    {feature.desc}
-                  </p>
-                </div>
+            ].map((s) => (
+              <div key={s.step} className="rounded-2xl border border-border bg-card p-6 relative">
+                <span className="text-3xl font-extrabold text-[#EAB308]/30">{s.step}</span>
+                <h3 className="font-semibold text-base mt-2 mb-2 text-foreground">{s.title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">{s.desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
+      {/* CTA Footer Banner */}
       <section className="py-16 px-6 border-t border-border">
-        <div className="max-w-2xl mx-auto">
-          <div className="bg-foreground rounded-2xl p-10 sm:p-14 text-center shadow-warm-md">
-            <div className="h-11 w-11 rounded-xl bg-primary/20 flex items-center justify-center mx-auto mb-5">
-              <GraduationCap className="h-5 w-5 text-primary" />
-            </div>
-            <h2 className="text-[24px] sm:text-[30px] font-bold tracking-tight text-background mb-3">
-              Ready to study smarter?
-            </h2>
-            <p className="text-background/55 text-[14px] mb-8 max-w-sm mx-auto leading-relaxed">
-              Upload your first lecture and turn it into study material in minutes.
-            </p>
-            <Button
-              size="lg"
-              className="bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-8 text-[14px] font-semibold rounded-xl amber-glow"
-              onClick={() => router.push("/auth/signup")}
-            >
-              Create free account
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
+        <div className="max-w-3xl mx-auto text-center bg-card rounded-2xl border border-border p-10 sm:p-14 shadow-warm-md">
+          <div className="h-12 w-12 rounded-2xl bg-[#EAB308]/15 flex items-center justify-center mx-auto mb-5">
+            <Brain className="h-6 w-6 text-[#EAB308]" />
           </div>
+          <h2 className="text-[26px] sm:text-[32px] font-bold tracking-tight text-foreground mb-3">
+            Turn your documents into knowledge today.
+          </h2>
+          <p className="text-muted-foreground text-[14px] mb-8 max-w-md mx-auto leading-relaxed">
+            Upload your first PDF or Word document and discover insights in seconds with DocuMind.
+          </p>
+          <Button
+            size="lg"
+            className="bg-[#EAB308] text-black hover:bg-[#EAB308]/90 font-semibold h-11 px-8 rounded-xl shadow-md"
+            onClick={() => router.push("/auth/signup")}
+          >
+            Create Free Account
+            <ArrowRight className="ml-2 h-4 w-4" />
+          </Button>
         </div>
       </section>
 
-      <footer className="border-t border-border py-7 px-6">
-        <div className="max-w-6xl mx-auto flex items-center justify-between text-[13px] text-muted-foreground">
+      {/* Footer */}
+      <footer className="border-t border-border py-6 px-6">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between text-[12.5px] text-muted-foreground gap-3">
           <div className="flex items-center gap-2">
-            <GraduationCap className="h-3.5 w-3.5 text-primary" />
-            <span className="font-semibold text-foreground">Lecture Lens</span>
+            <FileText className="h-4 w-4 text-[#EAB308]" />
+            <span className="font-bold text-foreground">DocuMind</span>
+            <span>— AI-Powered Document Intelligence</span>
           </div>
-          <p>Next.js · Express · AI</p>
+          <p>© {new Date().getFullYear()} DocuMind. All rights reserved.</p>
         </div>
       </footer>
     </div>

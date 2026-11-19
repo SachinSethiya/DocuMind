@@ -1,9 +1,12 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { protect } = require('../middlewares/auth');
-const { getStudentAnalytics, getLeaderboard } = require('../controllers/analyticsController');
+const { protect } = require("../middlewares/auth");
+const { getUserAnalytics } = require("../controllers/analyticsController");
 
-router.get('/student', protect, getStudentAnalytics);
-router.get('/leaderboard', protect, getLeaderboard);
+router.use(protect);
+
+router.get("/", getUserAnalytics);
+router.get("/overview", getUserAnalytics);
+router.get("/student", getUserAnalytics);
 
 module.exports = router;

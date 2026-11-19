@@ -1,12 +1,12 @@
 import axios from "axios"
 import type {
-  Lecture,
-  LectureSummaryResponse,
-  LectureUploadPayload,
-  Quiz,
   User,
   Document as DocType,
   ChatResponse,
+  Quiz,
+  QuizAttempt,
+  AnalyticsOverview,
+  AnswerEvaluation,
 } from "@/lib/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
@@ -22,6 +22,7 @@ function authHeaders() {
 }
 
 export const apiService = {
+  // ── Authentication ──────────────────────────────────────────
   async login(email: string, password: string): Promise<{ token: string; user: User }> {
     const response = await axios.post(`${API_URL}/auth/login`, { email, password })
     return response.data
@@ -46,139 +47,66 @@ export const apiService = {
     return response.data
   },
 
-  async getLectures(): Promise<{ lectures: Lecture[] }> {
-    const response = await axios.get(`${API_URL}/lectures`, {
-      headers: authHeaders(),
-    })
-    return response.data
-  },
-
-  async getLecture(id: string): Promise<Lecture> {
-    const response = await axios.get(`${API_URL}/lectures/${id}`, {
-      headers: authHeaders(),
-    })
-    return response.data
-  },
-
-  async getLectureSummary(id: string): Promise<LectureSummaryResponse> {
-    const response = await axios.get(`${API_URL}/lectures/${id}/summary`, {
-      headers: authHeaders(),
-    })
-    return response.data
-  },
-
-  async processLecture(id: string): Promise<{
-    lecture: Lecture
-    processingFailed: boolean
-    processingMode: "queue" | "inline"
-    message: string
-  }> {
-    const response = await axios.post(
-      `${API_URL}/lectures/${id}/process`,
-      {},
-      { headers: authHeaders() }
-    )
-    return response.data
-  },
-
-  async uploadLecture(payload: LectureUploadPayload): Promise<{
-    lecture: Lecture
-    processingFailed: boolean
-    processingMode: "queue" | "inline"
-    message: string
-  }> {
-    const formData = new FormData()
-
-    formData.append("title", payload.title)
-    if (payload.description) formData.append("description", payload.description)
-    if (payload.youtubeUrl) formData.append("youtubeUrl", payload.youtubeUrl)
-    if (payload.audioUrl) formData.append("audioUrl", payload.audioUrl)
-    if (payload.videoFile) formData.append("video", payload.videoFile)
-    if (payload.audioFile) formData.append("audio", payload.audioFile)
-    if (payload.pptFile) formData.append("ppt", payload.pptFile)
-    if (payload.bookFiles) payload.bookFiles.forEach((f) => formData.append("book", f))
-
-    const response = await axios.post(`${API_URL}/lectures/upload`, formData, {
-      headers: {
-        ...authHeaders(),
-        "Content-Type": "multipart/form-data",
-      },
-    })
-    return response.data
-  },
-
-  async deleteLecture(id: string): Promise<void> {
-    await axios.delete(`${API_URL}/lectures/${id}`, { headers: authHeaders() })
-  },
-
-  async getQuizzes(): Promise<{ quizzes: Quiz[] }> {
-    const response = await axios.get(`${API_URL}/quizzes`, {
-      headers: authHeaders(),
-    })
-    return response.data
-  },
-
-  async getLectureQuizzes(lectureId: string): Promise<{ quizzes: Quiz[] }> {
-    const response = await axios.get(`${API_URL}/quizzes/lecture/${lectureId}`, {
-      headers: authHeaders(),
-    })
-    return response.data
-  },
-
-  async submitQuiz(quizId: string, answers: number[]) {
-    const response = await axios.post(
-      `${API_URL}/quizzes/attempt`,
-      { quizId, answers },
-      { headers: authHeaders() }
-    )
-    return response.data
-  },
-
-  async getStudentAnalytics() {
-    const response = await axios.get(`${API_URL}/analytics/student`, {
-      headers: authHeaders(),
-    })
-    return response.data
-  },
-
-  async getLeaderboard() {
-    const response = await axios.get(`${API_URL}/analytics/leaderboard`, {
-      headers: authHeaders(),
-    })
-    return response.data
-  },
-
-  // ── Documents (RAG) ──────────────────────────────────────────
-
+  // ── Document Intelligence (PDF & DOCX) ───────────────────────
   async uploadDocument(
     file: File,
     title: string,
     onProgress?: (pct: number) => void
-  ): Promise<{ document: DocType }> {
+  ): Promise<{ message: string; document: DocType }> {
     const form = new FormData()
     form.append("file", file)
     form.append("title", title)
+
     const response = await axios.post(`${API_URL}/documents/upload`, form, {
-      headers: { ...authHeaders(), "Content-Type": "multipart/form-data" },
+      headers: {
+        ...authHeaders(),
+        "Content-Type": "multipart/form-data",
+      },
       onUploadProgress: (e) => {
-        if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100))
+        if (onProgress && e.total) {
+          onProgress(Math.round((e.loaded / e.total) * 100))
+        }
       },
     })
     return response.data
   },
 
-  async listDocuments(): Promise<{ documents: DocType[] }> {
-    const response = await axios.get(`${API_URL}/documents`, { headers: authHeaders() })
+  async listDocuments(search?: string, status?: string): Promise<{ documents: DocType[] }> {
+    const params = new URLSearchParams()
+    if (search) params.append("search", search)
+    if (status) params.append("status", status)
+
+    const response = await axios.get(`${API_URL}/documents?${params.toString()}`, {
+      headers: authHeaders(),
+    })
     return response.data
   },
 
   async getDocument(id: string): Promise<{ document: DocType }> {
-    const response = await axios.get(`${API_URL}/documents/${id}`, { headers: authHeaders() })
+    const response = await axios.get(`${API_URL}/documents/${id}`, {
+      headers: authHeaders(),
+    })
     return response.data
   },
 
-  async deleteDocument(id: string): Promise<void> {
-    await axios.delete(`${API_URL}/documents/${id}`, { headers: authHeaders() })
+  async getDocumentStatus(id: string): Promise<{
+    status: DocType["status"]
+    errorMessage?: string
+    pageCount: number
+    chunkCount: number
+    totalWords: number
+  }> {
+    const response = await axios.get(`${API_URL}/documents/${id}/status`, {
+      headers: authHeaders(),
+    })
+    return response.data
+  },
+
+  async deleteDocument(id: string): Promise<{ message: string }> {
+    const response = await axios.delete(`${API_URL}/documents/${id}`, {
+      headers: authHeaders(),
+    })
+    return response.data
   },
 
   async chatWithDocument(id: string, message: string): Promise<ChatResponse> {
@@ -190,48 +118,97 @@ export const apiService = {
     return response.data
   },
 
-  async clearDocumentChat(id: string): Promise<void> {
-    await axios.delete(`${API_URL}/documents/${id}/chat`, { headers: authHeaders() })
-  },
-
-  async chatWithLecture(id: string, message: string): Promise<ChatResponse> {
-    const response = await axios.post(
-      `${API_URL}/lectures/${id}/chat`,
-      { message },
-      { headers: authHeaders() }
-    )
-    return response.data
-  },
-
-  async uploadBookToLecture(lectureId: string, files: File[]): Promise<{ books: DocType[] }> {
-    const form = new FormData()
-    files.forEach((f) => form.append("book", f))
-    const response = await axios.post(`${API_URL}/lectures/${lectureId}/books`, form, {
-      headers: { ...authHeaders(), "Content-Type": "multipart/form-data" },
-    })
-    return response.data
-  },
-
-  async getLectureBooks(lectureId: string): Promise<{ documents: DocType[] }> {
-    const response = await axios.get(`${API_URL}/documents?lectureId=${lectureId}`, {
+  async clearDocumentChat(id: string): Promise<{ message: string }> {
+    const response = await axios.delete(`${API_URL}/documents/${id}/chat`, {
       headers: authHeaders(),
     })
     return response.data
   },
 
-  async getFlashcards(lectureId: string): Promise<{ flashcards: import("./types").Flashcard[] }> {
-    const response = await axios.get(`${API_URL}/lectures/${lectureId}/flashcards`, {
+  async regenerateSummary(id: string): Promise<{ message: string; summary: DocType["summary"] }> {
+    const response = await axios.post(
+      `${API_URL}/documents/${id}/regenerate-summary`,
+      {},
+      { headers: authHeaders() }
+    )
+    return response.data
+  },
+
+  // ── Quiz Generation & Assessment ─────────────────────────────
+  async generateQuiz(payload: {
+    documentId: string
+    topic?: string
+    difficulty?: "easy" | "medium" | "hard"
+    questionType?: "mcq" | "descriptive" | "mixed"
+    numQuestions?: number
+  }): Promise<{ success: boolean; quiz: Quiz }> {
+    const response = await axios.post(`${API_URL}/quizzes/generate`, payload, {
       headers: authHeaders(),
     })
     return response.data
   },
 
-  async generateFlashcards(lectureId: string, count = 10): Promise<{ flashcards: import("./types").Flashcard[] }> {
+  async getQuizzes(documentId?: string): Promise<{ quizzes: Quiz[] }> {
+    const url = documentId ? `${API_URL}/quizzes?documentId=${documentId}` : `${API_URL}/quizzes`
+    const response = await axios.get(url, { headers: authHeaders() })
+    return response.data
+  },
+
+  async getQuiz(id: string): Promise<{ quiz: Quiz }> {
+    const response = await axios.get(`${API_URL}/quizzes/${id}`, {
+      headers: authHeaders(),
+    })
+    return response.data
+  },
+
+  async submitQuiz(
+    quizId: string,
+    answers: any[],
+    timeSpent = 0
+  ): Promise<{
+    success: boolean
+    score: number
+    accuracy: number
+    correct: number
+    total: number
+    attempt: QuizAttempt
+  }> {
     const response = await axios.post(
-      `${API_URL}/lectures/${lectureId}/flashcards`,
-      { count },
+      `${API_URL}/quizzes/${quizId}/attempt`,
+      { quizId, answers, timeSpent },
       { headers: authHeaders() }
     )
     return response.data
+  },
+
+  async evaluateAnswer(payload: {
+    question: string
+    expectedAnswer: string
+    keyPoints?: string[]
+    userAnswer: string
+  }): Promise<AnswerEvaluation> {
+    const response = await axios.post(`${API_URL}/quizzes/evaluate-answer`, payload, {
+      headers: authHeaders(),
+    })
+    return response.data
+  },
+
+  async getQuizHistory(documentId?: string): Promise<{ attempts: QuizAttempt[] }> {
+    const url = documentId ? `${API_URL}/quizzes/history?documentId=${documentId}` : `${API_URL}/quizzes/history`
+    const response = await axios.get(url, { headers: authHeaders() })
+    return response.data
+  },
+
+  // ── Performance Analytics ────────────────────────────────────
+  async getUserAnalytics(): Promise<AnalyticsOverview> {
+    const response = await axios.get(`${API_URL}/analytics/overview`, {
+      headers: authHeaders(),
+    })
+    return response.data
+  },
+
+  // Backward compatibility alias
+  async getStudentAnalytics(): Promise<AnalyticsOverview> {
+    return this.getUserAnalytics()
   },
 }

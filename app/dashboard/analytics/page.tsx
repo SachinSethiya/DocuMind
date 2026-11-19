@@ -1,492 +1,439 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { apiService } from "@/lib/api"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import type { AnalyticsOverview } from "@/lib/types"
+import { Button } from "@/components/ui/button"
 import {
+  AreaChart,
+  Area,
   BarChart,
   Bar,
-  LineChart,
-  Line,
+  PieChart,
+  Pie,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  ReferenceLine,
-  Cell,
+  Legend,
 } from "recharts"
 import {
-  Trophy,
+  LineChart as LineChartIcon,
   TrendingUp,
-  TrendingDown,
-  AlertTriangle,
+  Brain,
+  FileText,
   CheckCircle2,
-  Medal,
-  BarChart3,
-  Users,
-  Target,
+  AlertTriangle,
+  Sparkles,
+  Trophy,
+  Loader2,
+  Clock,
+  ArrowRight,
 } from "lucide-react"
+import { formatDistanceToNow, format } from "date-fns"
 
-interface LectureStat {
-  lectureId: string
-  title: string
-  attempts: { score: number; total: number; createdAt: string }[]
-  best: number
-  latest: number
-  avg: number
-  needsImprovement: boolean
-}
-
-interface LeaderboardEntry {
-  rank: number
-  studentId: string
-  name: string
-  email: string
-  avgScore: number
-  attempts: number
-  best: number
-  isMe: boolean
-}
-
-interface StudentAnalytics {
-  overallAvg: number
-  totalAttempts: number
-  passed: number
-  lectureStats: LectureStat[]
-  scoreHistory: { date: string; score: number; lecture: string }[]
-}
-
-interface LeaderboardData {
-  leaderboard: LeaderboardEntry[]
-  myRank: number | null
-}
-
-const PASS_THRESHOLD = 70
-
-function getRankBadge(rank: number) {
-  if (rank === 1) return { icon: "🥇", color: "text-amber-500" }
-  if (rank === 2) return { icon: "🥈", color: "text-slate-400" }
-  if (rank === 3) return { icon: "🥉", color: "text-amber-700" }
-  return { icon: `#${rank}`, color: "text-muted-foreground" }
-}
-
-function ScoreTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="bg-card border rounded-lg shadow-lg px-3 py-2 text-sm">
-      <p className="font-medium mb-0.5">{label}</p>
-      <p className="text-primary">{payload[0].value}%</p>
-    </div>
-  )
+const DIFFICULTY_COLORS = {
+  easy: "#10B981",    // emerald
+  medium: "#EAB308",  // amber
+  hard: "#EF4444",    // red
 }
 
 export default function AnalyticsPage() {
-  const [analytics, setAnalytics] = useState<StudentAnalytics | null>(null)
-  const [leaderboard, setLeaderboard] = useState<LeaderboardData | null>(null)
+  const router = useRouter()
+  const [data, setData] = useState<AnalyticsOverview | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState("")
 
   useEffect(() => {
-    Promise.all([apiService.getStudentAnalytics(), apiService.getLeaderboard()])
-      .then(([a, l]) => {
-        setAnalytics(a)
-        setLeaderboard(l)
-      })
-      .catch(() => setError("Failed to load analytics. Make sure you have quiz attempts."))
-      .finally(() => setLoading(false))
+    async function loadAnalytics() {
+      try {
+        const res = await apiService.getUserAnalytics()
+        setData(res)
+      } catch (err) {
+        console.error("Failed to load user analytics:", err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadAnalytics()
   }, [])
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center space-y-2">
-          <BarChart3 className="h-10 w-10 text-muted-foreground/40 mx-auto animate-pulse" />
-          <p className="text-sm text-muted-foreground">Loading analytics…</p>
-        </div>
+      <div className="py-20 text-center text-xs text-muted-foreground space-y-2">
+        <Loader2 className="h-6 w-6 animate-spin mx-auto text-[#EAB308]" />
+        <p>Loading learning analytics...</p>
       </div>
     )
   }
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-sm text-muted-foreground">{error}</p>
-      </div>
-    )
-  }
+  const hasAttempts = data && data.totalQuizzesAttempted > 0
 
-  const weakAreas = analytics?.lectureStats.filter((l) => l.needsImprovement) || []
-  const strongAreas = analytics?.lectureStats.filter((l) => !l.needsImprovement) || []
-
-  const historyChartData = (analytics?.scoreHistory || []).map((h, i) => ({
-    name: `Q${i + 1}`,
+  // Chart data formatting
+  const scoreHistoryData = (data?.scoreHistory || []).map((h, i) => ({
+    name: `Quiz ${h.attemptNumber || i + 1}`,
     score: h.score,
-    lecture: h.lecture,
+    accuracy: h.accuracy,
+    title: h.title,
+    date: h.date ? format(new Date(h.date), "MMM d") : `Q${i + 1}`,
   }))
 
-  const lectureBarData = (analytics?.lectureStats || [])
-    .slice()
-    .sort((a, b) => a.avg - b.avg)
-    .map((l) => ({
-      name: l.title.length > 20 ? l.title.slice(0, 18) + "…" : l.title,
-      avg: l.avg,
-      best: l.best,
-    }))
+  const topicChartData = (data?.topicBreakdown || []).map((t) => ({
+    topic: t.topic.length > 18 ? t.topic.slice(0, 15) + "..." : t.topic,
+    accuracy: t.accuracy,
+    attempts: t.attempts,
+    avgScore: t.avgScore,
+  }))
 
-  const passRate =
-    analytics && analytics.totalAttempts > 0
-      ? Math.round((analytics.passed / analytics.totalAttempts) * 100)
-      : 0
+  const difficultyChartData = [
+    {
+      difficulty: "Easy",
+      avgScore: data?.difficultyBreakdown?.easy?.avgScore || 0,
+      accuracy: data?.difficultyBreakdown?.easy?.accuracy || 0,
+      attempts: data?.difficultyBreakdown?.easy?.attempts || 0,
+      fill: DIFFICULTY_COLORS.easy,
+    },
+    {
+      difficulty: "Medium",
+      avgScore: data?.difficultyBreakdown?.medium?.avgScore || 0,
+      accuracy: data?.difficultyBreakdown?.medium?.accuracy || 0,
+      attempts: data?.difficultyBreakdown?.medium?.attempts || 0,
+      fill: DIFFICULTY_COLORS.medium,
+    },
+    {
+      difficulty: "Hard",
+      avgScore: data?.difficultyBreakdown?.hard?.avgScore || 0,
+      accuracy: data?.difficultyBreakdown?.hard?.accuracy || 0,
+      attempts: data?.difficultyBreakdown?.hard?.attempts || 0,
+      fill: DIFFICULTY_COLORS.hard,
+    },
+  ]
 
-  const topFive = leaderboard?.leaderboard.slice(0, 5) || []
-  const myRank = leaderboard?.myRank
+  const pieData = [
+    { name: "Correct Answers", value: data?.totalCorrectAnswers || 0, fill: "#10B981" },
+    { name: "Incorrect Answers", value: data?.totalIncorrectAnswers || 0, fill: "#F87171" },
+  ]
 
   return (
-    <div className="space-y-6">
-      <div className="relative">
-        {/* Pulsing AI orb — decorative accent */}
-        <div className="absolute right-0 top-0 w-16 h-16 pointer-events-none select-none" aria-hidden>
-          <div className="orb-ring absolute inset-0 rounded-full bg-amber-400/20" />
-          <div className="orb-ring absolute inset-0 rounded-full bg-amber-400/15" style={{ animationDelay: "0.9s" }} />
-          <div className="absolute inset-3 rounded-full border border-amber-400/30 animate-pulse" />
-          <div className="absolute inset-[22px] rounded-full bg-amber-400/50" />
+    <div className="space-y-8 max-w-6xl">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <span className="text-[11.5px] font-bold uppercase tracking-wider text-[#EAB308]">
+            Learning Intelligence
+          </span>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground mt-0.5">
+            My Learning & Performance Analytics
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Track concept mastery, question accuracy, difficulty distribution, and AI-driven study recommendations.
+          </p>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Your quiz performance, weak areas, and how you rank among peers
-        </p>
+
+        <Button
+          onClick={() => router.push("/dashboard/quizzes")}
+          className="bg-[#EAB308] text-black hover:bg-[#EAB308]/90 font-semibold h-9 px-4 text-xs rounded-xl shadow-sm self-start sm:self-auto"
+        >
+          <Brain className="h-4 w-4 mr-1.5" />
+          Take a Quiz
+        </Button>
       </div>
 
-      {/* Overview stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          {
-            label: "Overall Average",
-            value: `${analytics?.overallAvg ?? 0}%`,
-            progress: analytics?.overallAvg ?? 0,
-            icon: Target,
-            color: "text-primary",
-          },
-          {
-            label: "Pass Rate",
-            value: `${passRate}%`,
-            progress: passRate,
-            icon: CheckCircle2,
-            color: "text-emerald-500",
-          },
-          {
-            label: "Total Attempts",
-            value: `${analytics?.totalAttempts ?? 0}`,
-            progress: Math.min((analytics?.totalAttempts ?? 0) * 10, 100),
-            icon: BarChart3,
-            color: "text-violet-500",
-          },
-          {
-            label: "Your Rank",
-            value: myRank ? `#${myRank}` : "—",
-            progress: myRank && leaderboard
-              ? Math.max(0, 100 - Math.round(((myRank - 1) / leaderboard.leaderboard.length) * 100))
-              : 0,
-            icon: Trophy,
-            color: "text-amber-500",
-          },
-        ].map((s) => (
-          <Card key={s.label}>
-            <CardContent className="pt-4 pb-3">
-              <div className="flex items-center gap-2 mb-1">
-                <s.icon className={`h-4 w-4 ${s.color}`} />
-                <span className="text-xs text-muted-foreground font-medium">{s.label}</span>
+      {/* Top Level Metric Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="rounded-2xl border border-border bg-card p-4.5 space-y-1 shadow-sm">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-medium">Overall Accuracy</span>
+            <div className="h-7 w-7 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-foreground">
+            {hasAttempts ? `${data.overallAccuracy}%` : "—"}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {data?.totalCorrectAnswers || 0} / {data?.totalQuestionsAttempted || 0} correct
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card p-4.5 space-y-1 shadow-sm">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-medium">Average Quiz Score</span>
+            <div className="h-7 w-7 rounded-lg bg-[#EAB308]/15 text-[#EAB308] flex items-center justify-center">
+              <Trophy className="h-3.5 w-3.5" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-foreground">
+            {hasAttempts ? `${data.averageScore}%` : "—"}
+          </div>
+          <p className="text-[11px] text-muted-foreground">Across all difficulties</p>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card p-4.5 space-y-1 shadow-sm">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-medium">Total Quizzes</span>
+            <div className="h-7 w-7 rounded-lg bg-purple-500/10 text-purple-500 flex items-center justify-center">
+              <Brain className="h-3.5 w-3.5" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-foreground">
+            {data?.totalQuizzesAttempted || 0}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {data?.totalQuestionsAttempted || 0} questions attempted
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card p-4.5 space-y-1 shadow-sm">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-medium">Indexed Documents</span>
+            <div className="h-7 w-7 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center">
+              <FileText className="h-3.5 w-3.5" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-foreground">
+            {data?.totalDocuments || 0}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {data?.completedDocuments || 0} analyzed & ready
+          </p>
+        </div>
+      </div>
+
+      {/* AI Recommendations Banner */}
+      {data?.recommendations && data.recommendations.length > 0 && (
+        <div className="rounded-2xl border border-[#EAB308]/30 bg-[#EAB308]/5 p-5 space-y-3">
+          <div className="flex items-center gap-2 text-[#D97706] font-bold text-xs uppercase tracking-wider">
+            <Sparkles className="h-4 w-4" />
+            <span>AI Practice & Knowledge Recommendations</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            {data.recommendations.map((rec, i) => (
+              <div
+                key={i}
+                className="p-3 rounded-xl bg-card border border-[#EAB308]/20 text-foreground leading-relaxed flex items-start gap-2.5"
+              >
+                <span className="text-[#EAB308] font-bold text-sm shrink-0">→</span>
+                <span>{rec}</span>
               </div>
-              <p className="text-2xl font-bold mb-2">{s.value}</p>
-              <Progress value={s.progress} className="h-1.5" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+            ))}
+          </div>
+        </div>
+      )}
 
-      <Tabs defaultValue="performance" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="performance">
-            <TrendingUp className="mr-1.5 h-3.5 w-3.5" />
-            Performance
-          </TabsTrigger>
-          <TabsTrigger value="improvement">
-            <AlertTriangle className="mr-1.5 h-3.5 w-3.5" />
-            Improvement Areas
-            {weakAreas.length > 0 && (
-              <Badge variant="destructive" className="ml-1.5 h-4 text-[10px] px-1">
-                {weakAreas.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="leaderboard">
-            <Users className="mr-1.5 h-3.5 w-3.5" />
-            Leaderboard
-          </TabsTrigger>
-        </TabsList>
-
-        {/* ─── Performance Charts ─── */}
-        <TabsContent value="performance" className="space-y-4">
-          {historyChartData.length > 0 ? (
-            <>
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-primary" />
-                    Score Trend
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    Your scores across all quiz attempts (pass line at 70%)
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <LineChart data={historyChartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                      <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
-                      <Tooltip content={<ScoreTooltip />} />
-                      <ReferenceLine y={PASS_THRESHOLD} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: "Pass", fontSize: 10, fill: "#f59e0b" }} />
-                      <Line
-                        type="monotone"
-                        dataKey="score"
-                        stroke="hsl(var(--primary))"
-                        strokeWidth={2}
-                        dot={{ r: 4, fill: "hsl(var(--primary))" }}
-                        activeDot={{ r: 6 }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-
-              {lectureBarData.length > 0 && (
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <BarChart3 className="h-4 w-4 text-violet-500" />
-                      Score by Lecture
-                    </CardTitle>
-                    <CardDescription className="text-xs">Average score per lecture</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={220}>
-                      <BarChart data={lectureBarData} margin={{ top: 5, right: 10, left: -20, bottom: 40 }}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                        <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" interval={0} />
-                        <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
-                        <Tooltip formatter={(v: any) => [`${v}%`]} />
-                        <ReferenceLine y={PASS_THRESHOLD} stroke="#f59e0b" strokeDasharray="4 4" />
-                        <Bar dataKey="avg" radius={[4, 4, 0, 0]}>
-                          {lectureBarData.map((entry, i) => (
-                            <Cell
-                              key={i}
-                              fill={entry.avg >= PASS_THRESHOLD ? "hsl(var(--primary))" : "#ef4444"}
-                            />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              )}
-            </>
-          ) : (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-16 gap-3">
-                <BarChart3 className="h-12 w-12 text-muted-foreground/30" />
-                <p className="text-sm text-muted-foreground">No quiz attempts yet.</p>
-                <p className="text-xs text-muted-foreground">Complete quizzes to see your performance charts.</p>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        {/* ─── Improvement Areas ─── */}
-        <TabsContent value="improvement" className="space-y-4">
-          {weakAreas.length === 0 && strongAreas.length === 0 && (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-16 gap-3">
-                <CheckCircle2 className="h-12 w-12 text-muted-foreground/30" />
-                <p className="text-sm text-muted-foreground">No quiz data to analyze yet.</p>
-              </CardContent>
-            </Card>
-          )}
-
-          {weakAreas.length > 0 && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-red-500" />
-                  Needs Improvement
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Lectures where your average is below {PASS_THRESHOLD}% — focus here
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {weakAreas.map((l) => (
-                  <div key={l.lectureId} className="rounded-lg border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/20 p-3">
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <div>
-                        <p className="text-sm font-medium">{l.title}</p>
-                        <p className="text-xs text-muted-foreground">{l.attempts.length} attempt{l.attempts.length > 1 ? "s" : ""}</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-lg font-bold text-red-500">{l.avg}%</p>
-                        <p className="text-[10px] text-muted-foreground">avg</p>
-                      </div>
-                    </div>
-                    <Progress value={l.avg} className="h-1.5 bg-red-200 dark:bg-red-900/40" />
-                    <div className="flex gap-4 mt-2">
-                      <span className="text-[11px] text-muted-foreground">Best: <strong>{l.best}%</strong></span>
-                      <span className="text-[11px] text-muted-foreground">Latest: <strong>{l.latest}%</strong></span>
-                      {l.latest > l.avg && (
-                        <span className="text-[11px] text-emerald-500 flex items-center gap-0.5">
-                          <TrendingUp className="h-3 w-3" /> Improving
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-red-600 dark:text-red-400 mt-2 font-medium">
-                      Tip: Review the lecture transcript and summary, then retry the quiz.
-                    </p>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
-          {strongAreas.length > 0 && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  Strong Areas
-                </CardTitle>
-                <CardDescription className="text-xs">Lectures where you scored ≥ {PASS_THRESHOLD}%</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2.5">
-                {strongAreas.map((l) => (
-                  <div key={l.lectureId} className="rounded-lg border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50 dark:bg-emerald-950/20 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-medium">{l.title}</p>
-                        <p className="text-xs text-muted-foreground">{l.attempts.length} attempt{l.attempts.length > 1 ? "s" : ""}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-lg font-bold text-emerald-500">{l.avg}%</p>
-                        <p className="text-[10px] text-muted-foreground">avg</p>
-                      </div>
-                    </div>
-                    <Progress value={l.avg} className="h-1.5 mt-2 bg-emerald-200 dark:bg-emerald-900/40" />
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        {/* ─── Leaderboard ─── */}
-        <TabsContent value="leaderboard" className="space-y-4">
-          {myRank && (
-            <Card className="border-primary/30 bg-primary/5">
-              <CardContent className="pt-4 pb-3 flex items-center gap-3">
-                <Medal className="h-8 w-8 text-amber-500 shrink-0" />
+      {!hasAttempts ? (
+        <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center space-y-3">
+          <Brain className="h-10 w-10 text-muted-foreground/40 mx-auto" />
+          <h3 className="text-sm font-semibold text-foreground">No quiz attempts recorded yet</h3>
+          <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+            Take your first quiz from the Quiz Generator or Document Workspace to start generating learning analytics and visualizations.
+          </p>
+          <Button
+            size="sm"
+            onClick={() => router.push("/dashboard/quizzes")}
+            className="bg-[#EAB308] text-black hover:bg-[#EAB308]/90 font-semibold text-xs h-8"
+          >
+            Launch Quiz Generator
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Row 1 Charts: Performance Trend & Topic Accuracy */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Chart 1: Performance Over Time */}
+            <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+              <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-semibold">Your current rank: #{myRank}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Out of {leaderboard?.leaderboard.length} students
-                    {myRank <= 3 ? " — Great job, keep it up!" : " — Keep practicing to climb higher!"}
-                  </p>
+                  <h3 className="text-xs font-bold text-foreground">Quiz Score Progression</h3>
+                  <p className="text-[11px] text-muted-foreground">Historical score trend across attempts</p>
                 </div>
-              </CardContent>
-            </Card>
-          )}
+                <TrendingUp className="h-4 w-4 text-[#EAB308]" />
+              </div>
 
-          {topFive.length > 0 && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Trophy className="h-4 w-4 text-amber-500" />
-                  Top 5
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={180}>
-                  <BarChart data={topFive.map((e) => ({ name: e.name.split(" ")[0], avg: e.avgScore, isMe: e.isMe }))} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={(v: any) => [`${v}%`, "Avg Score"]} />
-                    <Bar dataKey="avg" radius={[4, 4, 0, 0]}>
-                      {topFive.map((entry, i) => (
-                        <Cell
-                          key={i}
-                          fill={entry.isMe ? "hsl(var(--primary))" : i === 0 ? "#f59e0b" : "hsl(var(--muted-foreground) / 0.4)"}
-                        />
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={scoreHistoryData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="scoreGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#EAB308" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="#EAB308" stopOpacity={0.0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#888" }} />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "#888" }} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#18181b",
+                        borderColor: "#27272a",
+                        borderRadius: "12px",
+                        fontSize: "11px",
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="score"
+                      stroke="#EAB308"
+                      strokeWidth={2.5}
+                      fillOpacity={1}
+                      fill="url(#scoreGrad)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Chart 2: Accuracy by Topic */}
+            <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xs font-bold text-foreground">Topic Accuracy & Mastery</h3>
+                  <p className="text-[11px] text-muted-foreground">Accuracy percentage across studied document topics</p>
+                </div>
+                <Brain className="h-4 w-4 text-purple-400" />
+              </div>
+
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={topicChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+                    <XAxis dataKey="topic" tick={{ fontSize: 10, fill: "#888" }} />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "#888" }} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#18181b",
+                        borderColor: "#27272a",
+                        borderRadius: "12px",
+                        fontSize: "11px",
+                      }}
+                    />
+                    <Bar dataKey="accuracy" fill="#8B5CF6" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* Row 2 Charts: Difficulty Breakdown & Question Distribution */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Chart 3: Difficulty Breakdown (2 Cols) */}
+            <div className="lg:col-span-2 rounded-2xl border border-border bg-card p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xs font-bold text-foreground">Performance by Difficulty Level</h3>
+                  <p className="text-[11px] text-muted-foreground">Easy vs. Medium vs. Hard accuracy and volume</p>
+                </div>
+                <Trophy className="h-4 w-4 text-emerald-400" />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                {difficultyChartData.map((d) => (
+                  <div key={d.difficulty} className="p-3.5 rounded-xl border border-border bg-secondary/30 space-y-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {d.difficulty}
+                    </span>
+                    <div className="text-lg font-extrabold text-foreground">{d.accuracy}%</div>
+                    <p className="text-[11px] text-muted-foreground">{d.attempts} attempts recorded</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="h-48 w-full pt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={difficultyChartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+                    <XAxis dataKey="difficulty" tick={{ fontSize: 10, fill: "#888" }} />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "#888" }} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#18181b",
+                        borderColor: "#27272a",
+                        borderRadius: "12px",
+                        fontSize: "11px",
+                      }}
+                    />
+                    <Bar dataKey="accuracy" radius={[6, 6, 0, 0]}>
+                      {difficultyChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} />
                       ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          )}
+              </div>
+            </div>
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Users className="h-4 w-4 text-violet-500" />
-                Full Leaderboard
-              </CardTitle>
-              <CardDescription className="text-xs">Ranked by average quiz score</CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              {(leaderboard?.leaderboard || []).length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-10">
-                  No quiz attempts recorded yet.
-                </p>
-              ) : (
-                <div className="divide-y">
-                  {leaderboard!.leaderboard.map((entry) => {
-                    const badge = getRankBadge(entry.rank)
-                    return (
-                      <div
-                        key={entry.studentId.toString()}
-                        className={`flex items-center gap-3 px-4 py-2.5 ${entry.isMe ? "bg-primary/5 font-semibold" : ""}`}
-                      >
-                        <span className={`text-sm w-7 text-center ${badge.color} font-bold shrink-0`}>
-                          {badge.icon}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 text-sm truncate">
-                            <span className="truncate">{entry.name}</span>
-                            {entry.isMe && (
-                              <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-primary/40 text-primary shrink-0">
-                                You
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-[10px] text-muted-foreground">{entry.attempts} attempt{entry.attempts !== 1 ? "s" : ""}</p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className={`text-sm font-bold ${entry.avgScore >= PASS_THRESHOLD ? "text-emerald-500" : "text-red-400"}`}>
-                            {entry.avgScore}%
-                          </p>
-                          <p className="text-[10px] text-muted-foreground">avg</p>
-                        </div>
-                      </div>
-                    )
-                  })}
+            {/* Chart 4: Question Distribution Donut (1 Col) */}
+            <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+              <div>
+                <h3 className="text-xs font-bold text-foreground">Answer Accuracy Ratio</h3>
+                <p className="text-[11px] text-muted-foreground">Correct vs. incorrect questions</p>
+              </div>
+
+              <div className="h-52 w-full flex items-center justify-center">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={45}
+                      outerRadius={70}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {pieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#18181b",
+                        borderColor: "#27272a",
+                        borderRadius: "12px",
+                        fontSize: "11px",
+                      }}
+                    />
+                    <Legend iconType="circle" wrapperStyle={{ fontSize: "11px" }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* Recent Activity Table */}
+          <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+            <h3 className="text-xs font-bold text-foreground">Recent Quiz Activity</h3>
+            <div className="divide-y divide-border/60 text-xs">
+              {data.recentActivity.map((act) => (
+                <div key={act.id} className="py-3 first:pt-0 last:pb-0 flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-semibold text-foreground">{act.documentTitle}</h4>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Topic: {act.topic} · <span className="capitalize">{act.difficulty}</span> difficulty
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span
+                      className={`font-bold px-2.5 py-0.5 rounded-full text-xs ${
+                        act.score >= 70
+                          ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+                          : "bg-amber-500/10 text-amber-500 border border-amber-500/20"
+                      }`}
+                    >
+                      {act.score}%
+                    </span>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      {formatDistanceToNow(new Date(act.completedAt), { addSuffix: true })}
+                    </p>
+                  </div>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

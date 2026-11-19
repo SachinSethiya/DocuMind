@@ -62,8 +62,8 @@ const __dirnameRoot = path.resolve();
 app.use('/uploads', express.static(path.join(__dirnameRoot, 'uploads')));
 
 // ✅ Health check
-app.get('/', (req, res) => res.send('Lecture Lens API Running'));
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+app.get('/', (req, res) => res.send('DocuMind API Running'));
+app.get('/api/health', (req, res) => res.json({ ok: true, platform: 'DocuMind' }));
 
 // ✅ API Routes with rate limiting
 app.use('/api/auth', authLimiter, authRoutes);

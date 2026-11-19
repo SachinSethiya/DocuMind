@@ -81,7 +81,7 @@ def _extract_audio_ffmpeg(input_path: str, output_wav: str):
         raise RuntimeError(f"ffmpeg failed: {result.stderr.decode()[:500]}")
 
 
-app = FastAPI(title="Lecture Lens - Python AI Services")
+app = FastAPI(title="DocuMind - Python AI Services")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -276,12 +276,45 @@ async def ingest_document(
             result = _process_document(str(target))
             chunks = result["chunks"]
             count = ingest(document_id, chunks, {"title": title or document_id})
-            return count, result["total_words"]
+            return count, result["total_words"], result.get("page_count", len(result.get("pages", [1]))), result.get("pages", []), result.get("raw_text", "")
 
-        chunk_count, total_words = await asyncio.to_thread(_run)
-        return {"ok": True, "chunk_count": chunk_count, "total_words": total_words}
+        chunk_count, total_words, page_count, pages, raw_text = await asyncio.to_thread(_run)
+        return {
+            "ok": True,
+            "chunk_count": chunk_count,
+            "total_words": total_words,
+            "page_count": page_count,
+            "pages": pages,
+            "raw_text": raw_text,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Document ingest failed: {e}")
+    finally:
+        target.unlink(missing_ok=True)
+
+
+@app.post("/parse-document")
+async def parse_document_endpoint(file: UploadFile = File(...)):
+    """Parse document to extract pages, structure, and text without ingesting into vector store."""
+    req_id = uuid.uuid4().hex
+    suffix = os.path.splitext(file.filename)[1] or ".bin"
+    target = UPLOAD_DIR / f"{req_id}{suffix}"
+
+    with open(target, "wb") as buf:
+        shutil.copyfileobj(file.file, buf)
+
+    try:
+        result = await asyncio.to_thread(_process_document, str(target))
+        return {
+            "ok": True,
+            "page_count": result.get("page_count", len(result.get("pages", [1]))),
+            "pages": result.get("pages", []),
+            "raw_text": result.get("raw_text", ""),
+            "chunks": result.get("chunks", []),
+            "total_words": result.get("total_words", 0),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Document parse failed: {e}")
     finally:
         target.unlink(missing_ok=True)
 

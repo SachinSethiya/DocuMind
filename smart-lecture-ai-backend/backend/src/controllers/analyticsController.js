@@ -1,120 +1,211 @@
-const QuizAttempt = require('../models/QuizAttempt');
-const User = require('../models/User');
-const Lecture = require('../models/Lecture');
+const QuizAttempt = require("../models/QuizAttempt");
+const Document = require("../models/Document");
+const User = require("../models/User");
 
 /**
- * @desc  Get current student's performance analytics per lecture
- * @route GET /api/analytics/student
- * @access Private (student)
+ * Core Feature 13: User Performance Analytics (100% User-Isolated)
+ * Returns document and learning intelligence metrics calculated from actual attempts.
  */
-exports.getStudentAnalytics = async (req, res) => {
-  const studentId = req.user._id;
+exports.getUserAnalytics = async (req, res) => {
+  const userId = req.user._id;
 
-  // Get all attempts by this student, populate lecture title
-  const attempts = await QuizAttempt.find({ student: studentId })
-    .populate('lecture', 'title')
+  // 1. Fetch user's total documents count
+  const totalDocuments = await Document.countDocuments({ userId });
+  const completedDocuments = await Document.countDocuments({
+    userId,
+    status: { $in: ["completed", "ready"] },
+  });
+
+  // 2. Fetch all quiz attempts by this user
+  const attempts = await QuizAttempt.find({ student: userId })
+    .populate("document", "title")
     .sort({ createdAt: 1 })
     .lean();
 
-  // Group by lecture — keep all attempts for trend, surface best + latest
-  const byLecture = {};
-  for (const a of attempts) {
-    const lid = a.lecture?._id?.toString() || a.lecture?.toString();
-    const title = a.lecture?.title || 'Untitled Lecture';
-    if (!byLecture[lid]) {
-      byLecture[lid] = { lectureId: lid, title, attempts: [] };
-    }
-    byLecture[lid].attempts.push({
-      score: a.score,
-      total: a.total,
-      createdAt: a.createdAt,
+  const totalQuizzesAttempted = attempts.length;
+
+  if (totalQuizzesAttempted === 0) {
+    return res.json({
+      totalDocuments,
+      completedDocuments,
+      totalQuizzesAttempted: 0,
+      totalQuestionsAttempted: 0,
+      totalCorrectAnswers: 0,
+      totalIncorrectAnswers: 0,
+      averageScore: 0,
+      overallAccuracy: 0,
+      difficultyBreakdown: {
+        easy: { attempts: 0, avgScore: 0, accuracy: 0 },
+        medium: { attempts: 0, avgScore: 0, accuracy: 0 },
+        hard: { attempts: 0, avgScore: 0, accuracy: 0 },
+      },
+      topicBreakdown: [],
+      weakTopics: [],
+      strongTopics: [],
+      recommendations: [
+        "Upload a document and generate your first quiz to begin tracking performance.",
+      ],
+      scoreHistory: [],
+      recentActivity: [],
     });
   }
 
-  const lectureStats = Object.values(byLecture).map((entry) => {
-    const scores = entry.attempts.map((a) => a.score);
-    const best = Math.max(...scores);
-    const latest = scores[scores.length - 1];
-    const avg = Math.round(scores.reduce((s, x) => s + x, 0) / scores.length);
+  // 3. Aggregate totals
+  let totalQuestionsAttempted = 0;
+  let totalCorrectAnswers = 0;
+  const allScores = [];
+
+  const byDifficulty = {
+    easy: { scores: [], correct: 0, total: 0 },
+    medium: { scores: [], correct: 0, total: 0 },
+    hard: { scores: [], correct: 0, total: 0 },
+  };
+
+  const byTopic = {};
+
+  for (const a of attempts) {
+    const score = a.score || 0;
+    allScores.push(score);
+
+    const questionsCount = a.total || a.answers?.length || 0;
+    const correctCount = a.correct !== undefined ? a.correct : a.answers?.filter((ans) => ans.correct).length || 0;
+
+    totalQuestionsAttempted += questionsCount;
+    totalCorrectAnswers += correctCount;
+
+    // Difficulty breakdown
+    const diff = (a.difficulty || "medium").toLowerCase();
+    const targetDiff = byDifficulty[diff] || byDifficulty.medium;
+    targetDiff.scores.push(score);
+    targetDiff.correct += correctCount;
+    targetDiff.total += questionsCount;
+
+    // Topic breakdown
+    const topic = a.topic || "General";
+    if (!byTopic[topic]) {
+      byTopic[topic] = { topic, scores: [], correct: 0, total: 0, attempts: 0 };
+    }
+    byTopic[topic].scores.push(score);
+    byTopic[topic].correct += correctCount;
+    byTopic[topic].total += questionsCount;
+    byTopic[topic].attempts += 1;
+  }
+
+  const averageScore = Math.round(allScores.reduce((sum, s) => sum + s, 0) / allScores.length);
+  const overallAccuracy =
+    totalQuestionsAttempted > 0
+      ? Math.round((totalCorrectAnswers / totalQuestionsAttempted) * 100)
+      : 0;
+  const totalIncorrectAnswers = totalQuestionsAttempted - totalCorrectAnswers;
+
+  // Process difficulty breakdown
+  const difficultyBreakdown = {
+    easy: {
+      attempts: byDifficulty.easy.scores.length,
+      avgScore: byDifficulty.easy.scores.length
+        ? Math.round(byDifficulty.easy.scores.reduce((s, x) => s + x, 0) / byDifficulty.easy.scores.length)
+        : 0,
+      accuracy: byDifficulty.easy.total > 0
+        ? Math.round((byDifficulty.easy.correct / byDifficulty.easy.total) * 100)
+        : 0,
+    },
+    medium: {
+      attempts: byDifficulty.medium.scores.length,
+      avgScore: byDifficulty.medium.scores.length
+        ? Math.round(byDifficulty.medium.scores.reduce((s, x) => s + x, 0) / byDifficulty.medium.scores.length)
+        : 0,
+      accuracy: byDifficulty.medium.total > 0
+        ? Math.round((byDifficulty.medium.correct / byDifficulty.medium.total) * 100)
+        : 0,
+    },
+    hard: {
+      attempts: byDifficulty.hard.scores.length,
+      avgScore: byDifficulty.hard.scores.length
+        ? Math.round(byDifficulty.hard.scores.reduce((s, x) => s + x, 0) / byDifficulty.hard.scores.length)
+        : 0,
+      accuracy: byDifficulty.hard.total > 0
+        ? Math.round((byDifficulty.hard.correct / byDifficulty.hard.total) * 100)
+        : 0,
+    },
+  };
+
+  // Process topics
+  const topicBreakdown = Object.values(byTopic).map((t) => {
+    const avgScore = Math.round(t.scores.reduce((s, x) => s + x, 0) / t.scores.length);
+    const accuracy = t.total > 0 ? Math.round((t.correct / t.total) * 100) : avgScore;
     return {
-      lectureId: entry.lectureId,
-      title: entry.title,
-      attempts: entry.attempts,
-      best,
-      latest,
-      avg,
-      needsImprovement: avg < 70,
+      topic: t.topic,
+      attempts: t.attempts,
+      avgScore,
+      accuracy,
+      correct: t.correct,
+      total: t.total,
+      needsImprovement: accuracy < 70,
     };
   });
 
-  // Sort: weak areas first
-  lectureStats.sort((a, b) => a.avg - b.avg);
+  topicBreakdown.sort((a, b) => a.accuracy - b.accuracy);
 
-  // Overall stats
-  const allScores = attempts.map((a) => a.score);
-  const overallAvg =
-    allScores.length > 0
-      ? Math.round(allScores.reduce((s, x) => s + x, 0) / allScores.length)
-      : 0;
+  const weakTopics = topicBreakdown.filter((t) => t.accuracy < 70).map((t) => t.topic);
+  const strongTopics = topicBreakdown.filter((t) => t.accuracy >= 80).map((t) => t.topic);
 
-  // Score history (chronological for line chart)
-  const scoreHistory = attempts.map((a) => ({
+  // Recommendations based on actual quiz attempts
+  const recommendations = [];
+  if (weakTopics.length > 0) {
+    weakTopics.slice(0, 3).forEach((t) => {
+      recommendations.push(`You need more practice with the topic: "${t}". Review document sections and attempt medium-difficulty quizzes.`);
+    });
+  }
+  if (difficultyBreakdown.hard.attempts === 0 && averageScore >= 75) {
+    recommendations.push("You're performing well on standard questions. Try challenging yourself with a Hard difficulty quiz!");
+  }
+  if (recommendations.length === 0) {
+    recommendations.push("Excellent work! You have maintained a strong accuracy rate across all document topics.");
+  }
+
+  // Chronological score history for charts
+  const scoreHistory = attempts.map((a, i) => ({
+    attemptNumber: i + 1,
     date: a.createdAt,
     score: a.score,
-    lecture: a.lecture?.title || 'Quiz',
+    accuracy: a.accuracy !== undefined ? a.accuracy : a.score,
+    title: a.document?.title || a.documentTitle || "Quiz",
+    topic: a.topic || "General",
+    difficulty: a.difficulty || "medium",
   }));
 
+  // Recent activity (latest 5)
+  const recentActivity = [...attempts]
+    .reverse()
+    .slice(0, 5)
+    .map((a) => ({
+      id: a._id.toString(),
+      documentTitle: a.document?.title || a.documentTitle || "Document Quiz",
+      score: a.score,
+      accuracy: a.accuracy !== undefined ? a.accuracy : a.score,
+      difficulty: a.difficulty || "medium",
+      topic: a.topic || "General",
+      completedAt: a.createdAt,
+    }));
+
   res.json({
-    overallAvg,
-    totalAttempts: attempts.length,
-    passed: allScores.filter((s) => s >= 70).length,
-    lectureStats,
+    totalDocuments,
+    completedDocuments,
+    totalQuizzesAttempted,
+    totalQuestionsAttempted,
+    totalCorrectAnswers,
+    totalIncorrectAnswers,
+    averageScore,
+    overallAccuracy,
+    difficultyBreakdown,
+    topicBreakdown,
+    weakTopics,
+    strongTopics,
+    recommendations,
     scoreHistory,
+    recentActivity,
   });
 };
 
-/**
- * @desc  Get leaderboard — all students ranked by average quiz score
- * @route GET /api/analytics/leaderboard
- * @access Private
- */
-exports.getLeaderboard = async (req, res) => {
-  // Aggregate: per student → avg score, attempt count
-  const results = await QuizAttempt.aggregate([
-    {
-      $group: {
-        _id: '$student',
-        avgScore: { $avg: '$score' },
-        attempts: { $sum: 1 },
-        best: { $max: '$score' },
-      },
-    },
-    { $sort: { avgScore: -1 } },
-  ]);
-
-  // Populate student names
-  const studentIds = results.map((r) => r._id);
-  const users = await User.find({ _id: { $in: studentIds } }, 'name email').lean();
-  const userMap = {};
-  for (const u of users) userMap[u._id.toString()] = u;
-
-  const leaderboard = results.map((r, i) => {
-    const user = userMap[r._id.toString()] || {};
-    const isMe = r._id.toString() === req.user._id.toString();
-    return {
-      rank: i + 1,
-      studentId: r._id,
-      name: user.name || 'Unknown',
-      email: user.email || '',
-      avgScore: Math.round(r.avgScore),
-      attempts: r.attempts,
-      best: r.best,
-      isMe,
-    };
-  });
-
-  // Find current user's rank (they may not have any attempts yet)
-  const myEntry = leaderboard.find((e) => e.isMe);
-
-  res.json({ leaderboard, myRank: myEntry?.rank || null });
-};
+// Backward compatibility alias for legacy route
+exports.getStudentAnalytics = exports.getUserAnalytics;

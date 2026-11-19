@@ -2,43 +2,46 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import { apiService } from "@/lib/api"
 import type {
-  Lecture,
-  LectureSummary,
-  LectureUploadPayload,
+  Document as DocType,
   Quiz,
   QuizAttempt,
   User,
+  AnalyticsOverview,
 } from "@/lib/types"
-
-type UploadLectureResult = Awaited<ReturnType<typeof apiService.uploadLecture>>
-type ReprocessLectureResult = Awaited<ReturnType<typeof apiService.processLecture>>
 
 interface AppStoreState {
   user: User | null
   isAuthenticated: boolean
   isLoading: boolean
-  lectures: Lecture[]
+  documents: DocType[]
+  activeDocument: DocType | null
   quizzes: Quiz[]
-  summaries: Record<string, LectureSummary>
+  analytics: AnalyticsOverview | null
+
+  // Auth actions
   login: (email: string, password: string) => Promise<boolean>
   signup: (name: string, email: string, password: string) => Promise<boolean>
   fetchProfile: () => Promise<void>
   updateProfile: (data: { name?: string; email?: string }) => Promise<boolean>
   logout: () => void
-  fetchLectures: () => Promise<void>
-  deleteLecture: (lectureId: string) => Promise<void>
-  uploadLecture: (payload: LectureUploadPayload) => Promise<UploadLectureResult>
-  fetchSummary: (lectureId: string) => Promise<void>
-  reprocessLecture: (lectureId: string) => Promise<ReprocessLectureResult>
-  fetchQuizzes: (lectureId?: string) => Promise<void>
-  submitQuizAttempt: (quizId: string, answers: number[]) => Promise<any>
-  getUserQuizAttempts: () => QuizAttempt[]
-}
 
-function upsertLecture(lectures: Lecture[], nextLecture: Lecture) {
-  const lectureId = nextLecture._id || nextLecture.id
-  const remaining = lectures.filter((lecture) => (lecture._id || lecture.id) !== lectureId)
-  return [nextLecture, ...remaining]
+  // Document actions
+  fetchDocuments: (search?: string, status?: string) => Promise<void>
+  fetchDocument: (id: string) => Promise<DocType | null>
+  deleteDocument: (id: string) => Promise<void>
+  setActiveDocument: (doc: DocType | null) => void
+
+  // Quiz actions
+  fetchQuizzes: (documentId?: string) => Promise<void>
+  submitQuizAttempt: (quizId: string, answers: any[], timeSpent?: number) => Promise<any>
+  getUserQuizAttempts: () => QuizAttempt[]
+
+  // Analytics actions
+  fetchAnalytics: () => Promise<void>
+
+  // Backward compatibility legacy methods
+  lectures: any[]
+  fetchLectures: () => Promise<void>
 }
 
 export const useAppStore = create<AppStoreState>()(
@@ -47,9 +50,11 @@ export const useAppStore = create<AppStoreState>()(
       user: null,
       isAuthenticated: false,
       isLoading: true,
-      lectures: [],
+      documents: [],
+      activeDocument: null,
       quizzes: [],
-      summaries: {},
+      analytics: null,
+      lectures: [],
 
       async login(email, password) {
         try {
@@ -131,84 +136,58 @@ export const useAppStore = create<AppStoreState>()(
           user: null,
           isAuthenticated: false,
           isLoading: false,
-          lectures: [],
+          documents: [],
+          activeDocument: null,
           quizzes: [],
-          summaries: {},
+          analytics: null,
+          lectures: [],
         })
       },
 
-      async fetchLectures() {
+      async fetchDocuments(search, status) {
         try {
-          const data = await apiService.getLectures()
-          set({ lectures: data.lectures || [] })
+          const data = await apiService.listDocuments(search, status)
+          set({ documents: data.documents || [] })
         } catch (error) {
-          console.error("Fetch lectures failed:", error)
+          console.error("Fetch documents failed:", error)
         }
       },
 
-      async deleteLecture(lectureId) {
-        await apiService.deleteLecture(lectureId)
-        set((state) => ({
-          lectures: state.lectures.filter((l) => String(l._id || l.id) !== String(lectureId)),
-        }))
-      },
-
-      async uploadLecture(payload) {
-        const result = await apiService.uploadLecture(payload)
-        const lectureId = result.lecture?._id || result.lecture?.id
-
-        set((state) => ({
-          lectures: upsertLecture(state.lectures, result.lecture),
-          summaries:
-            lectureId && result.lecture.summary
-              ? { ...state.summaries, [lectureId]: result.lecture.summary }
-              : state.summaries,
-        }))
-
-        return result
-      },
-
-      async fetchSummary(lectureId) {
+      async fetchDocument(id) {
         try {
-          const response = await apiService.getLectureSummary(lectureId)
-          set((state) => ({
-            summaries: {
-              ...state.summaries,
-              [lectureId]: response.summary || {},
-            },
-          }))
+          const data = await apiService.getDocument(id)
+          set({ activeDocument: data.document })
+          return data.document
         } catch (error) {
-          console.error("Fetch summary failed:", error)
+          console.error("Fetch document failed:", error)
+          return null
         }
       },
 
-      async reprocessLecture(lectureId) {
-        const result = await apiService.processLecture(lectureId)
+      async deleteDocument(id) {
+        await apiService.deleteDocument(id)
         set((state) => ({
-          lectures: upsertLecture(state.lectures, result.lecture),
-          summaries:
-            result.lecture.summary
-              ? { ...state.summaries, [lectureId]: result.lecture.summary }
-              : state.summaries,
+          documents: state.documents.filter((d) => d._id !== id),
+          activeDocument: state.activeDocument?._id === id ? null : state.activeDocument,
         }))
-        return result
       },
 
-      async fetchQuizzes(lectureId) {
-        try {
-          const response = lectureId
-            ? await apiService.getLectureQuizzes(lectureId)
-            : await apiService.getQuizzes()
+      setActiveDocument(doc) {
+        set({ activeDocument: doc })
+      },
 
-          set({ quizzes: response.quizzes || [] })
+      async fetchQuizzes(documentId) {
+        try {
+          const data = await apiService.getQuizzes(documentId)
+          set({ quizzes: data.quizzes || [] })
         } catch (error) {
           console.error("Fetch quizzes failed:", error)
         }
       },
 
-      async submitQuizAttempt(quizId, answers) {
+      async submitQuizAttempt(quizId, answers, timeSpent = 0) {
         try {
-          const result = await apiService.submitQuiz(quizId, answers)
+          const result = await apiService.submitQuiz(quizId, answers, timeSpent)
           await get().fetchProfile()
           return result
         } catch (error) {
@@ -218,12 +197,26 @@ export const useAppStore = create<AppStoreState>()(
       },
 
       getUserQuizAttempts() {
-        return get().user?.quizAttempts || []
+        return (get().user?.quizAttempts as any) || []
+      },
+
+      async fetchAnalytics() {
+        try {
+          const data = await apiService.getUserAnalytics()
+          set({ analytics: data })
+        } catch (error) {
+          console.error("Fetch analytics failed:", error)
+        }
+      },
+
+      // Legacy fallback
+      async fetchLectures() {
+        await get().fetchDocuments()
       },
     }),
     {
-      name: "lecture-lens-store",
-      version: 1,
+      name: "documind-store",
+      version: 2,
       partialize: (state) => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,

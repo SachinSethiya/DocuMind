@@ -1,116 +1,95 @@
-export interface QuizAttempt {
-  id?: string
-  quizId: string
-  score: number
-  completedAt: string
-}
-
 export interface User {
   _id?: string
   id?: string
   name: string
   email: string
   role?: "student" | "teacher" | "admin"
-  attendance?: number
   scores?: number[]
-  quizAttempts?: QuizAttempt[]
-}
-
-export interface TranscriptLine {
-  start?: number
-  end?: number
-  text?: string
-}
-
-export interface FrameData {
-  time?: number
-  text?: string
-  imageUrl?: string
-}
-
-export interface LectureSummary {
-  local?: string
-  ai?: string
-  merged?: string
-}
-
-export interface QuizQuestion {
-  id: string
-  question: string
-  options: string[]
-  correctAnswer: number
-}
-
-export interface Quiz {
-  id: string
-  lectureId: string
-  title: string
-  questions: QuizQuestion[]
-}
-
-export interface Lecture {
-  _id?: string
-  id?: string
-  title: string
-  description?: string
-  youtubeUrl?: string | null
-  videoUrl?: string | null
-  audioUrl?: string | null
-  pptUrl?: string | null
-  bookDocumentIds?: string[]
-  status: "uploaded" | "queued" | "processing" | "completed" | "failed"
-  errorMessage?: string
-  transcript?: TranscriptLine[]
-  frames?: FrameData[]
-  summary?: LectureSummary
-  flashcards?: Flashcard[]
+  quizAttempts?: {
+    quizId: string
+    score: number
+    completedAt: string
+  }[]
   createdAt?: string
-  teacher?: {
-    name?: string
-    email?: string
-  } | string
 }
-
-export interface LectureUploadPayload {
-  title: string
-  description?: string
-  youtubeUrl?: string
-  audioUrl?: string
-  videoFile?: File | null
-  audioFile?: File | null
-  pptFile?: File | null
-  bookFiles?: File[]
-}
-
-export interface LectureSummaryResponse {
-  summary: LectureSummary
-  status: Lecture["status"]
-  errorMessage?: string
-}
-
-// ── Document / RAG ──────────────────────────────────────────────
 
 export interface ChatMessage {
   _id?: string
   role: "user" | "assistant"
   content: string
+  sources?: {
+    text: string
+    score: number
+    pageNumber?: number
+    section?: string
+  }[]
   createdAt?: string
+}
+
+export interface DocumentTopic {
+  name: string
+  explanation: string
+  subtopics?: string[]
+  pageNumber?: number
+  section?: string
+}
+
+export interface DocumentAnalysis {
+  overview?: string
+  executiveSummary?: string
+  keyPoints?: string[]
+  importantFacts?: string[]
+  definitions?: {
+    term: string
+    definition: string
+    pageNumber?: number
+  }[]
+  importantConcepts?: string[]
+}
+
+export interface DocumentSummary {
+  overview?: string
+  executiveSummary?: string
+  keyPoints?: string[]
+  importantConcepts?: string[]
+  chapterSummaries?: {
+    title: string
+    summary: string
+    pageNumber?: number
+  }[]
+  definitions?: {
+    term: string
+    definition: string
+  }[]
+  keyTakeaways?: string[]
+  shortSummary?: string
+  detailedSummary?: string
+  sectionWiseSummary?: string
+  lastGeneratedAt?: string
 }
 
 export interface Document {
   _id: string
+  id?: string
   userId: string
   title: string
   fileName: string
   fileSize: number
   fileType: string
-  status: "uploading" | "processing" | "ready" | "failed"
+  status: "uploaded" | "processing" | "analyzing" | "completed" | "ready" | "failed"
   errorMessage?: string
   chunkCount: number
+  pageCount: number
   totalWords: number
-  lectureId?: string | null
-  lectureTitle?: string
-  source?: "standalone" | "lecture"
+  rawText?: string
+  pages?: {
+    pageNumber: number
+    text: string
+  }[]
+  keywords?: string[]
+  topics?: DocumentTopic[]
+  analysis?: DocumentAnalysis
+  summary?: DocumentSummary
   chatHistory?: ChatMessage[]
   createdAt: string
   updatedAt: string
@@ -118,15 +97,128 @@ export interface Document {
 
 export interface ChatResponse {
   answer: string
-  sources: { text: string; score: number }[]
+  sources: {
+    text: string
+    score: number
+    pageNumber?: number
+    section?: string
+  }[]
 }
 
-export interface Flashcard {
-  front: string
-  back: string
-  category: string
+export interface QuizQuestion {
+  id: string
+  type: "mcq" | "descriptive"
+  question: string
+  options?: string[]
+  correctAnswer?: number
+  expectedAnswer?: string
+  keyPoints?: string[]
+  explanation?: string
+  pageNumber?: number
+  topic?: string
+  difficulty?: string
 }
 
-export interface FlashcardsResponse {
-  flashcards: Flashcard[]
+export interface Quiz {
+  _id?: string
+  id: string
+  userId?: string
+  documentId: string
+  documentTitle?: string
+  title: string
+  topic: string
+  difficulty: "easy" | "medium" | "hard" | "mixed"
+  questionType: "mcq" | "descriptive" | "mixed"
+  questions: QuizQuestion[]
+  createdAt?: string
+}
+
+export interface AnswerEvaluation {
+  score: number
+  feedback: string
+  missingKeyPoints?: string[]
+  suggestedImprovements?: string
+}
+
+export interface QuizAttemptAnswer {
+  questionIndex: number
+  question: string
+  type?: "mcq" | "descriptive"
+  selected?: string
+  selectedOption?: number
+  userAnswer?: string
+  correct: boolean
+  score?: number
+  feedback?: string
+  missingKeyPoints?: string[]
+  suggestedImprovements?: string
+  explanation?: string
+  pageNumber?: number
+  topic?: string
+  difficulty?: string
+}
+
+export interface QuizAttempt {
+  _id?: string
+  id?: string
+  student?: string
+  quiz?: string | Quiz
+  document?: string | Document
+  documentTitle?: string
+  topic?: string
+  difficulty?: string
+  score: number
+  accuracy: number
+  total: number
+  correct: number
+  timeSpent?: number
+  answers: QuizAttemptAnswer[]
+  completedAt?: string
+  createdAt: string
+}
+
+export interface AnalyticsOverview {
+  totalDocuments: number
+  completedDocuments: number
+  totalQuizzesAttempted: number
+  totalQuestionsAttempted: number
+  totalCorrectAnswers: number
+  totalIncorrectAnswers: number
+  averageScore: number
+  overallAccuracy: number
+  difficultyBreakdown: {
+    easy: { attempts: number; avgScore: number; accuracy: number }
+    medium: { attempts: number; avgScore: number; accuracy: number }
+    hard: { attempts: number; avgScore: number; accuracy: number }
+  }
+  topicBreakdown: {
+    topic: string
+    attempts: number
+    avgScore: number
+    accuracy: number
+    correct: number
+    total: number
+    needsImprovement: boolean
+  }[]
+  weakTopics: string[]
+  strongTopics: string[]
+  recommendations: string[]
+  scoreHistory: {
+    attemptNumber?: number
+    date: string
+    score: number
+    accuracy: number
+    title: string
+    topic: string
+    difficulty: string
+  }[]
+  recentActivity: {
+    id: string
+    documentTitle: string
+    score: number
+    accuracy: number
+    difficulty: string
+    topic: string
+    completedAt: string
+  }[]
 }

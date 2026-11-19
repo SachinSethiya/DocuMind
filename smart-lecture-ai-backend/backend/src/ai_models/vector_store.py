@@ -141,6 +141,8 @@ def ingest(
             "document_id": document_id,
             "chunk_index": c["chunk_index"],
             "word_count": c["word_count"],
+            "pageNumber": int(c.get("pageNumber", 1)),
+            "section": str(c.get("section", "Page 1")),
             **(doc_metadata or {}),
         }
         for c in chunks
@@ -203,6 +205,8 @@ def query(
             "text": doc,
             "chunk_index": meta.get("chunk_index", -1),
             "word_count": meta.get("word_count", 0),
+            "pageNumber": meta.get("pageNumber", 1),
+            "section": meta.get("section", "Page 1"),
             "score": round(1 - dist, 4),  # cosine similarity (0-1, higher = more relevant)
         })
 

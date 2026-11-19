@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { LogOut, User, GraduationCap, Menu } from "lucide-react"
+import { LogOut, User, FileText, Menu, Sparkles } from "lucide-react"
 
 export function Navbar({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const router = useRouter()
@@ -34,35 +34,43 @@ export function Navbar({ onMenuToggle }: { onMenuToggle?: () => void }) {
         </button>
         <button
           onClick={() => router.push("/dashboard")}
-          className="flex items-center gap-2.5 hover:opacity-75 transition-opacity"
+          className="flex items-center gap-2.5 hover:opacity-85 transition-opacity"
         >
-        <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
-          <GraduationCap className="h-3.5 w-3.5 text-primary-foreground" />
-        </div>
-        <span className="text-[14px] font-semibold tracking-tight text-foreground">Lecture Lens</span>
+          <div className="h-7 w-7 rounded-lg bg-[#EAB308] flex items-center justify-center shadow-sm">
+            <FileText className="h-4 w-4 text-black" />
+          </div>
+          <div className="flex flex-col text-left">
+            <span className="text-[15px] font-bold tracking-tight text-foreground leading-none">
+              DocuMind
+            </span>
+            <span className="text-[9.5px] text-muted-foreground tracking-tight font-medium">
+              Document Intelligence
+            </span>
+          </div>
         </button>
       </div>
 
       {/* Right */}
-      <div className="flex items-center gap-2">
-        <span className="hidden sm:block text-[12px] text-muted-foreground bg-secondary px-2.5 py-1 rounded-full border border-border capitalize">
-          {user.role || "student"}
+      <div className="flex items-center gap-2.5">
+        <span className="hidden sm:inline-flex items-center gap-1.5 text-[11.5px] font-medium text-muted-foreground bg-secondary px-2.5 py-1 rounded-full border border-border">
+          <Sparkles className="h-3 w-3 text-[#EAB308]" />
+          AI Learning Engine
         </span>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="h-8 w-8 rounded-full p-0 hover:bg-accent">
               <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-primary/15 text-primary text-xs font-bold">
-                  {user.name?.charAt(0).toUpperCase()}
+                <AvatarFallback className="bg-[#EAB308]/15 text-[#EAB308] text-xs font-bold border border-[#EAB308]/20">
+                  {user.name?.charAt(0).toUpperCase() || "U"}
                 </AvatarFallback>
               </Avatar>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-52 shadow-warm-md border-border" align="end" forceMount>
+          <DropdownMenuContent className="w-56 shadow-warm-md border-border" align="end" forceMount>
             <DropdownMenuLabel className="font-normal">
-              <p className="text-[13px] font-semibold">{user.name}</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">{user.email}</p>
+              <p className="text-[13px] font-semibold text-foreground truncate">{user.name}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{user.email}</p>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -70,12 +78,15 @@ export function Navbar({ onMenuToggle }: { onMenuToggle?: () => void }) {
               onClick={() => router.push("/dashboard/profile")}
             >
               <User className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
-              Profile settings
+              Profile Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-[13px] cursor-pointer text-red-500 hover:text-red-600 focus:text-red-600"
-              onClick={() => { logout(); router.push("/") }}
+              onClick={() => {
+                logout()
+                router.push("/")
+              }}
             >
               <LogOut className="mr-2 h-3.5 w-3.5" />
               Sign out
