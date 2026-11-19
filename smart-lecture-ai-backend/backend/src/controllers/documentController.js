@@ -1,5 +1,6 @@
 const path = require("path");
 const fs = require("fs");
+const { pipeline } = require("stream/promises");
 const axios = require("axios");
 const FormData = require("form-data");
 const { geminiChat } = require("../services/gemini");
@@ -10,7 +11,7 @@ const { parseDocumentFile } = require("../services/documentParser");
 const {
   analyzeDocument,
   generateSummaries,
-} = require("../services/documentAnalysisService");
+} = require("../services/documentIntelligence");
 
 const PYTHON_AI_URL = process.env.PYTHON_AI_URL || "http://localhost:8000";
 
@@ -83,10 +84,15 @@ async function processDocumentPipeline(documentId, filePath, fileName, title) {
         importantConcepts: analysis.importantConcepts || [],
         chapterSummaries: summaries.chapterSummaries || [],
         definitions: analysis.definitions || [],
-        keyTakeaways: summaries.keyTakeaways || [],
+        keyTakeaways: summaries.keyTakeaways || summaries.finalTakeaways || [],
         shortSummary: summaries.shortSummary || "",
         detailedSummary: summaries.detailedSummary || "",
         sectionWiseSummary: summaries.sectionWiseSummary || "",
+        documentOverview: summaries.documentOverview || analysis.overview || "",
+        mainObjective: summaries.mainObjective || analysis.executiveSummary || "",
+        importantDefinitions: summaries.importantDefinitions || analysis.definitions || [],
+        keyFindings: summaries.keyFindings || analysis.importantFacts || [],
+        finalTakeaways: summaries.finalTakeaways || summaries.keyTakeaways || [],
         lastGeneratedAt: new Date(),
       },
       keywords: analysis.keywords || [],
@@ -107,6 +113,55 @@ async function processDocumentPipeline(documentId, filePath, fileName, title) {
     }
   }
 }
+
+async function downloadRemoteFile(url, destination) {
+  const response = await axios.get(url, { responseType: "stream", timeout: 120000 });
+  await pipeline(response.data, fs.createWriteStream(destination));
+}
+
+async function resolveLocalFilePath(filePath, fileName) {
+  if (!/^https?:\/\//i.test(filePath || "")) return filePath;
+
+  const tmpDir = path.join(process.cwd(), "tmp", "docs");
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const safeName = `${Date.now()}_${(fileName || "book").replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+  const localPath = path.join(tmpDir, safeName);
+  await downloadRemoteFile(filePath, localPath);
+  return localPath;
+}
+
+/**
+ * Create a Document record and run the same extraction/indexing pipeline used by uploads.
+ * Used when books are attached directly to a lecture.
+ */
+exports.createAndIngestDocument = async ({
+  userId,
+  title,
+  filePath,
+  fileName,
+  fileSize = 0,
+  fileType = "pdf",
+  lectureId = null,
+  lectureTitle = "",
+}) => {
+  const doc = await Document.create({
+    userId,
+    lectureId,
+    lectureTitle,
+    title,
+    fileName,
+    fileSize,
+    fileType,
+    status: "uploaded",
+  });
+
+  const localPath = await resolveLocalFilePath(filePath, fileName);
+  processDocumentPipeline(doc._id, localPath, fileName, title).catch((err) =>
+    errLog("Lecture book pipeline error:", err.message)
+  );
+
+  return doc;
+};
 
 // ─────────────────────────────────────────────────────────────────
 // POST /api/documents/upload
@@ -393,10 +448,15 @@ exports.regenerateSummary = async (req, res) => {
     importantConcepts: doc.analysis?.importantConcepts || doc.summary?.importantConcepts || [],
     chapterSummaries: summaries.chapterSummaries || [],
     definitions: doc.analysis?.definitions || [],
-    keyTakeaways: summaries.keyTakeaways || [],
+    keyTakeaways: summaries.keyTakeaways || summaries.finalTakeaways || [],
     shortSummary: summaries.shortSummary || "",
     detailedSummary: summaries.detailedSummary || "",
     sectionWiseSummary: summaries.sectionWiseSummary || "",
+    documentOverview: summaries.documentOverview || doc.summary?.documentOverview || doc.analysis?.overview || "",
+    mainObjective: summaries.mainObjective || doc.summary?.mainObjective || doc.analysis?.executiveSummary || "",
+    importantDefinitions: summaries.importantDefinitions || doc.analysis?.definitions || [],
+    keyFindings: summaries.keyFindings || doc.analysis?.importantFacts || [],
+    finalTakeaways: summaries.finalTakeaways || summaries.keyTakeaways || [],
     lastGeneratedAt: new Date(),
   };
 

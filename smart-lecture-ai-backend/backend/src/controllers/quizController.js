@@ -7,7 +7,8 @@ const {
   generateMCQs,
   generateDescriptiveQuestions,
   evaluateDescriptiveAnswer,
-} = require("../services/documentAnalysisService");
+  MAX_QUESTIONS,
+} = require("../services/documentIntelligence");
 
 // ─────────────────────────────────────────────────────────────────
 // Core Feature 6 & 7 & 8: Generate DocuMind Quiz
@@ -18,21 +19,47 @@ exports.generateQuiz = async (req, res) => {
     lectureId, // legacy fallback
     text,
     topic = "All Topics",
+    selectedTopics = [],
     difficulty = "medium",
     questionType = "mcq",
+    questionSubtype = "mixed",
     numQuestions = 5,
   } = req.body;
+
+  const allowedDifficulty = ["easy", "medium", "hard", "mixed"];
+  const allowedQuestionType = ["mcq", "descriptive", "mixed"];
+  const allowedSubtype = ["shortAnswer", "longAnswer", "conceptual", "analytical", "mixed"];
+
+  if (!allowedDifficulty.includes(difficulty)) {
+    return res.status(400).json({ message: "Invalid difficulty. Use easy, medium, hard, or mixed." });
+  }
+  if (!allowedQuestionType.includes(questionType)) {
+    return res.status(400).json({ message: "Invalid questionType. Use mcq, descriptive, or mixed." });
+  }
+  if (questionType === "descriptive" && !allowedSubtype.includes(questionSubtype)) {
+    return res.status(400).json({ message: "Invalid questionSubtype. Use shortAnswer, longAnswer, conceptual, analytical, or mixed." });
+  }
+
+  const count = parseInt(numQuestions, 10);
+  if (!Number.isInteger(count) || count < 1 || count > MAX_QUESTIONS) {
+    return res.status(400).json({ message: `numQuestions must be between 1 and ${MAX_QUESTIONS}.` });
+  }
 
   let doc = null;
   let contextText = text || "";
   let docTitle = "Document Quiz";
+  let pageCount = 1;
 
   if (documentId) {
     doc = await Document.findOne({ _id: documentId, userId: req.user._id });
     if (!doc) {
       return res.status(404).json({ message: "Document not found or access denied." });
     }
+    if (doc.status !== "completed" && doc.status !== "ready") {
+      return res.status(400).json({ message: `Document is currently '${doc.status}'. Wait until processing completes before generating questions.` });
+    }
     docTitle = doc.title;
+    pageCount = doc.pageCount || doc.pages?.length || 1;
     contextText = doc.rawText || (doc.pages || []).map((p) => `[Page ${p.pageNumber}]\n${p.text}`).join("\n\n");
   } else if (lectureId) {
     const lecture = await Lecture.findById(lectureId);
@@ -42,61 +69,78 @@ exports.generateQuiz = async (req, res) => {
     }
   }
 
-  if (!contextText.trim()) {
+  if (!contextText.trim() && !(doc?.pages || []).length) {
     return res.status(400).json({ message: "No document text available to generate questions from." });
   }
 
-  const count = Math.max(1, Math.min(20, parseInt(numQuestions, 10) || 5));
+  const topicLabel = Array.isArray(selectedTopics) && selectedTopics.length ? selectedTopics.join(", ") : topic;
+  const generationArgs = {
+    documentTitle: docTitle,
+    pages: doc?.pages || [],
+    rawText: doc?.rawText || "",
+    contextText: doc ? "" : contextText,
+    topic: topicLabel,
+    difficulty,
+    count,
+    pageCount,
+  };
+
   let questions = [];
+  let warning = "";
+  let generationError = "";
 
   if (questionType === "mcq") {
-    questions = await generateMCQs({
-      documentTitle: docTitle,
-      contextText,
-      topic,
-      difficulty,
-      count,
-    });
+    const result = await generateMCQs(generationArgs);
+    questions = result.questions;
+    warning = result.warning || "";
+    generationError = result.error || "";
   } else if (questionType === "descriptive") {
-    questions = await generateDescriptiveQuestions({
-      documentTitle: docTitle,
-      contextText,
-      topic,
-      difficulty,
-      count,
-    });
+    const result = await generateDescriptiveQuestions({ ...generationArgs, questionSubtype });
+    questions = result.questions;
+    warning = result.warning || "";
+    generationError = result.error || "";
   } else {
-    // Mixed: half MCQs, half Descriptive
     const mcqCount = Math.ceil(count / 2);
     const descCount = Math.floor(count / 2);
-    const mcqs = await generateMCQs({
-      documentTitle: docTitle,
-      contextText,
-      topic,
-      difficulty,
-      count: mcqCount,
-    });
-    const descs = await generateDescriptiveQuestions({
-      documentTitle: docTitle,
-      contextText,
-      topic,
-      difficulty,
-      count: descCount,
-    });
-    questions = [...mcqs, ...descs];
+    const [mcqResult, descResult] = await Promise.all([
+      generateMCQs({ ...generationArgs, count: mcqCount }),
+      generateDescriptiveQuestions({ ...generationArgs, count: descCount, questionSubtype }),
+    ]);
+    questions = [...mcqResult.questions, ...descResult.questions];
+    warning = [mcqResult.warning, descResult.warning].filter(Boolean).join(" ");
+    generationError = [mcqResult.error, descResult.error].filter(Boolean).join(" ");
   }
 
-  // Persist Quiz record in MongoDB if documentId is provided
+  if (!questions.length) {
+    if (generationError && generationError !== "empty_context") {
+      return res.status(502).json({
+        message: `AI question generation failed: ${generationError}`,
+        requestedCount: count,
+        generatedCount: 0,
+        error: generationError,
+      });
+    }
+    return res.status(422).json({
+      message: warning || "The AI could not generate valid questions from this document. Try a lower count or broader topic.",
+      requestedCount: count,
+      generatedCount: 0,
+      error: generationError || "validation_failed",
+    });
+  }
+
   let createdQuiz = null;
   if (doc) {
     createdQuiz = await Quiz.create({
       userId: req.user._id,
       documentId: doc._id,
       documentTitle: doc.title,
-      title: `${difficulty.toUpperCase()} Quiz: ${doc.title} (${topic})`,
-      topic,
+      title: `${difficulty.toUpperCase()} ${questionType.toUpperCase()} Quiz: ${doc.title} (${topicLabel})`,
+      topic: topicLabel,
       difficulty,
       questionType,
+      questionSubtype: questionType === "mcq" ? "mcq" : questionType === "descriptive" ? questionSubtype : "mixed",
+      requestedCount: count,
+      selectedTopics: Array.isArray(selectedTopics) && selectedTopics.length ? selectedTopics : [topic],
       questions,
     });
   }
@@ -108,6 +152,9 @@ exports.generateQuiz = async (req, res) => {
       title: `${difficulty.toUpperCase()} Quiz: ${docTitle}`,
       questions,
     },
+    requestedCount: count,
+    generatedCount: questions.length,
+    warning: questions.length < count ? warning || `Generated ${questions.length} of ${count} requested questions.` : "",
   });
 };
 
@@ -190,6 +237,7 @@ exports.attemptQuiz = async (req, res) => {
           expectedAnswer: q.expectedAnswer,
           keyPoints: q.keyPoints,
           userAnswer: textAnswer,
+          pageNumber: q.pageNumber,
         });
 
         const isPassing = evalResult.score >= 60;
@@ -204,8 +252,12 @@ exports.attemptQuiz = async (req, res) => {
           correct: isPassing,
           score: evalResult.score,
           feedback: evalResult.feedback,
-          missingKeyPoints: evalResult.missingKeyPoints,
-          suggestedImprovements: evalResult.suggestedImprovements,
+          coveredPoints: evalResult.coveredPoints || [],
+          missingKeyPoints: evalResult.missingKeyPoints || [],
+          incorrectStatements: evalResult.incorrectStatements || [],
+          suggestions: evalResult.suggestions || evalResult.suggestedImprovements || "",
+          pageReferences: evalResult.pageReferences || [q.pageNumber],
+          suggestedImprovements: evalResult.suggestedImprovements || evalResult.suggestions || "",
           explanation: q.explanation || q.expectedAnswer,
           pageNumber: q.pageNumber,
           topic: q.topic,
@@ -307,7 +359,7 @@ exports.attemptQuiz = async (req, res) => {
 // Evaluate a single descriptive answer in real time
 // ─────────────────────────────────────────────────────────────────
 exports.evaluateAnswer = async (req, res) => {
-  const { question, expectedAnswer, keyPoints = [], userAnswer } = req.body;
+  const { question, expectedAnswer, keyPoints = [], userAnswer, contextText = "", pageNumber = 1 } = req.body;
   if (!question || !userAnswer) {
     return res.status(400).json({ message: "`question` and `userAnswer` are required." });
   }
@@ -317,6 +369,8 @@ exports.evaluateAnswer = async (req, res) => {
     expectedAnswer: expectedAnswer || "",
     keyPoints,
     userAnswer,
+    contextText,
+    pageNumber,
   });
 
   res.json(evaluation);
@@ -334,6 +388,7 @@ exports.getQuizHistory = async (req, res) => {
 
   const attempts = await QuizAttempt.find(query)
     .populate("document", "title fileName")
+    .populate("quiz", "title questionType questionSubtype difficulty topic selectedTopics requestedCount questions.pageNumber questions.topic questions.difficulty questions.type")
     .sort({ createdAt: -1 });
 
   res.json({ attempts });

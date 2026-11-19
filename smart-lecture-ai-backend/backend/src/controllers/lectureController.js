@@ -3,6 +3,7 @@ const path = require("path");
 const axios = require("axios");
 const { Queue } = require("bullmq");
 const Lecture = require("../models/Lecture");
+const Document = require("../models/Document");
 const { connection, isRedisAvailable } = require("../queues");
 const { processLectureJob } = require("../services/lectureProcessing");
 const { createAndIngestDocument } = require("./documentController");
@@ -340,6 +341,20 @@ exports.deleteLecture = async (req, res) => {
 
   await Lecture.findByIdAndDelete(req.params.id);
   res.json({ ok: true });
+};
+
+exports.getLectureBooks = async (req, res) => {
+  const lecture = await Lecture.findById(req.params.id);
+  if (!lecture) return res.status(404).json({ error: "Lecture not found" });
+
+  const documents = await Document.find({
+    _id: { $in: lecture.bookDocumentIds || [] },
+    userId: req.user._id,
+  })
+    .select("-rawText -chatHistory -pages")
+    .sort({ createdAt: -1 });
+
+  res.json({ documents });
 };
 
 // POST /api/lectures/:id/books  — add books to an existing lecture

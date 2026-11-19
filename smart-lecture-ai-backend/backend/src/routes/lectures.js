@@ -91,6 +91,7 @@ router.get("/:id/flashcards", protect, lecturesController.getFlashcards);
 router.post("/:id/flashcards", protect, lecturesController.generateFlashcards);
 
 // Upload books to an existing lecture
+router.get("/:id/books", protect, lecturesController.getLectureBooks);
 router.post(
   "/:id/books",
   protect,

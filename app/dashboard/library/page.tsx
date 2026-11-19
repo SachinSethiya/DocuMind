@@ -26,14 +26,17 @@ function formatBytes(bytes: number) {
 }
 
 function StatusBadge({ status }: { status: DocType["status"] }) {
-  const map = {
+  const map: Record<DocType["status"], { label: string; icon: typeof Loader2; cls: string }> = {
     uploading:  { label: "Uploading",  icon: Loader2,      cls: "text-blue-400 bg-blue-400/10 border-blue-400/20" },
+    uploaded:   { label: "Queued",     icon: Clock,        cls: "text-blue-400 bg-blue-400/10 border-blue-400/20" },
     processing: { label: "Indexing…",  icon: Loader2,      cls: "text-yellow-400 bg-yellow-400/10 border-yellow-400/20" },
+    analyzing:  { label: "Analyzing…", icon: Loader2,      cls: "text-yellow-400 bg-yellow-400/10 border-yellow-400/20" },
+    completed:  { label: "Ready",      icon: CheckCircle2, cls: "text-green-400 bg-green-400/10 border-green-400/20" },
     ready:      { label: "Ready",      icon: CheckCircle2, cls: "text-green-400 bg-green-400/10 border-green-400/20" },
     failed:     { label: "Failed",     icon: AlertCircle,  cls: "text-red-400 bg-red-400/10 border-red-400/20" },
   }
   const { label, icon: Icon, cls } = map[status] ?? map.failed
-  const spin = status === "uploading" || status === "processing"
+  const spin = status === "uploading" || status === "processing" || status === "analyzing"
   return (
     <span className={cn("inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border", cls)}>
       <Icon className={cn("h-3 w-3 shrink-0", spin && "animate-spin")} />

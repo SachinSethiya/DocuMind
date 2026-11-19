@@ -4,6 +4,12 @@ const {
   chunkForLLM,
   evaluateDescriptiveAnswer,
 } = require("../src/services/documentAnalysisService");
+const { parseJSONResponse } = require("../src/services/gemini");
+const {
+  selectQuestionContext,
+  validateMcqQuestion,
+  validateDescriptiveQuestion,
+} = require("../src/services/documentIntelligence");
 
 test("chunkForLLM chunks pages into manageable windows", () => {
   const pages = [

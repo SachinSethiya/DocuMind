@@ -8,8 +8,17 @@ const Groq = require("groq-sdk");
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
-const GEMINI_MODELS = ["gemini-2.0-flash", "gemini-2.0-flash-lite"];
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+const DEFAULT_GEMINI_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-latest",
+];
+const GEMINI_MODELS = process.env.GEMINI_MODEL
+  ? [process.env.GEMINI_MODEL, ...DEFAULT_GEMINI_MODELS.filter((m) => m !== process.env.GEMINI_MODEL)]
+  : DEFAULT_GEMINI_MODELS;
+const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 
 const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 const groqClient = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : null;
@@ -40,32 +49,113 @@ async function callGroq(systemPrompt, userMessage, opts = {}) {
   return completion.choices[0].message.content;
 }
 
+function errorStatus(err) {
+  return err?.status || err?.response?.status || err?.code;
+}
+
+function safeErrorMessage(err) {
+  const msg = err?.message || String(err);
+  // Avoid leaking provider payloads that could contain request metadata.
+  return msg.length > 300 ? `${msg.slice(0, 300)}...` : msg;
+}
+
 /**
- * Call Gemini with automatic fallback: Gemini Flash → Flash Lite → Groq Llama.
+ * Call Gemini with automatic fallback across configured models, then Groq.
+ * Any provider error moves to the next candidate instead of aborting generation.
  */
 async function geminiChat(systemPrompt, userMessage, opts = {}) {
+  let lastGeminiError = null;
+
   if (genAI) {
     for (const modelName of GEMINI_MODELS) {
       try {
         return await callGemini(modelName, systemPrompt, userMessage, opts);
       } catch (err) {
-        const status = err?.status || err?.response?.status;
-        if (status === 429 || status === 503) {
-          console.warn(`[gemini] ${modelName} quota/overload, trying next...`);
-          await sleep(1000);
-          continue;
-        }
-        throw err;
+        lastGeminiError = err;
+        const status = errorStatus(err);
+        console.warn(`[gemini] ${modelName} failed (${status || "error"}): ${safeErrorMessage(err)}`);
+        if (status === 429 || status === 503) await sleep(1000);
       }
     }
   }
 
   if (groqClient) {
-    console.warn("[gemini] All Gemini models failed, falling back to Groq Llama...");
-    return await callGroq(systemPrompt, userMessage, opts);
+    console.warn("[gemini] Gemini models exhausted, falling back to Groq...");
+    try {
+      return await callGroq(systemPrompt, userMessage, opts);
+    } catch (groqErr) {
+      const geminiMsg = lastGeminiError ? ` Gemini: ${safeErrorMessage(lastGeminiError)}.` : "";
+      throw new Error(`All LLM providers failed.${geminiMsg} Groq: ${safeErrorMessage(groqErr)}`);
+    }
   }
 
+  if (lastGeminiError) {
+    throw new Error(`Gemini request failed and GROQ_API_KEY is not configured. ${safeErrorMessage(lastGeminiError)}`);
+  }
   throw new Error("No LLM available. Set GEMINI_API_KEY or GROQ_API_KEY.");
+}
+
+function stripCodeFences(text) {
+  let cleaned = String(text || "").trim();
+  const fence = cleaned.match(/^```(?:json|JSON)?\s*([\s\S]*?)\s*```$/);
+  if (fence) return fence[1].trim();
+  // Remove a leading fence if the model opened one but did not close it cleanly.
+  cleaned = cleaned.replace(/^```(?:json|JSON)?\s*/i, "");
+  cleaned = cleaned.replace(/\s*```$/i, "");
+  return cleaned.trim();
+}
+
+function extractJsonCandidate(text) {
+  const source = stripCodeFences(text);
+  const startCandidates = [source.indexOf("{"), source.indexOf("[")].filter((i) => i >= 0);
+  if (!startCandidates.length) return source;
+  const start = Math.min(...startCandidates);
+  const open = source[start];
+  const close = open === "{" ? "}" : "]";
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < source.length; i++) {
+    const ch = source[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === open) depth += 1;
+    else if (ch === close) {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+  return source.slice(start);
+}
+
+function sanitizeJsonText(text) {
+  return String(text || "")
+    .replace(/,\s*([}\]])/g, "$1") // trailing commas
+    .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:/g, '$1"$2":'); // unquoted keys
+}
+
+function parseJSONResponse(raw) {
+  const cleaned = stripCodeFences(raw);
+  const candidates = [cleaned, extractJsonCandidate(cleaned)].filter(Boolean);
+  let lastErr = null;
+
+  for (const candidate of candidates) {
+    for (const text of [candidate, sanitizeJsonText(candidate)]) {
+      try {
+        return JSON.parse(text);
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+  }
+
+  throw new Error(`geminiJSON: could not parse response as JSON: ${cleaned.slice(0, 300)}`);
 }
 
 async function geminiJSON(systemPrompt, userMessage, opts = {}) {
@@ -74,17 +164,7 @@ async function geminiJSON(systemPrompt, userMessage, opts = {}) {
     userMessage,
     opts
   );
-
-  // Strip markdown code fences if present
-  const cleaned = raw.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/i, "").trim();
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    // Try extracting first JSON object/array
-    const match = cleaned.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-    if (match) return JSON.parse(match[1]);
-    throw new Error(`geminiJSON: could not parse response as JSON:\n${cleaned.slice(0, 300)}`);
-  }
+  return parseJSONResponse(raw);
 }
 
-module.exports = { geminiChat, geminiJSON };
+module.exports = { geminiChat, geminiJSON, parseJSONResponse };

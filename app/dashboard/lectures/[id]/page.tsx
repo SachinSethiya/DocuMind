@@ -117,7 +117,7 @@ export default function LectureViewerPage() {
 
   const exportCSV = () => {
     const rows = [["Front", "Back", "Category"], ...flashcards.map((c) => [c.front, c.back, c.category])]
-    const csv = rows.map((r) => r.map((v) => `"${v.replace(/"/g, '""')}"`).join(",")).join("\n")
+    const csv = rows.map((r) => r.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n")
     const blob = new Blob([csv], { type: "text/csv" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a"); a.href = url; a.download = "flashcards.csv"; a.click()
@@ -633,7 +633,7 @@ export default function LectureViewerPage() {
               ) : (
                 <div className="space-y-2">
                   {books.map((book) => {
-                    const isReady = book.status === "ready"
+                    const isReady = book.status === "ready" || book.status === "completed"
                     const isProcessing = book.status === "processing"
                     return (
                       <div key={book._id} className={cn(

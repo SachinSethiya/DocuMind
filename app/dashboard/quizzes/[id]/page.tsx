@@ -212,7 +212,7 @@ export default function QuizPage() {
                     </p>
                   </div>
                   <div className="space-y-1.5 ml-6">
-                    {question.options.map((option, optionIndex) => (
+                    {(question.options || []).map((option, optionIndex) => (
                       <div
                         key={optionIndex}
                         className={`text-xs px-3 py-1.5 rounded ${
@@ -293,7 +293,7 @@ export default function QuizPage() {
             value={answers[currentQuestion]?.toString() || ""}
             onValueChange={(value) => handleAnswerChange(currentQuestion, parseInt(value, 10))}
           >
-            {quiz.questions[currentQuestion].options.map((option, index) => (
+            {(quiz.questions[currentQuestion].options || []).map((option, index) => (
               <div
                 key={index}
                 className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent transition-colors"

@@ -4,6 +4,7 @@ export interface User {
   name: string
   email: string
   role?: "student" | "teacher" | "admin"
+  attendance?: number
   scores?: number[]
   quizAttempts?: {
     quizId: string
@@ -30,7 +31,10 @@ export interface DocumentTopic {
   name: string
   explanation: string
   subtopics?: string[]
+  relatedKeywords?: string[]
+  importanceScore?: number
   pageNumber?: number
+  pageReferences?: number[]
   section?: string
 }
 
@@ -65,6 +69,15 @@ export interface DocumentSummary {
   shortSummary?: string
   detailedSummary?: string
   sectionWiseSummary?: string
+  documentOverview?: string
+  mainObjective?: string
+  importantDefinitions?: {
+    term: string
+    definition: string
+    pageNumber?: number
+  }[]
+  keyFindings?: string[]
+  finalTakeaways?: string[]
   lastGeneratedAt?: string
 }
 
@@ -72,11 +85,13 @@ export interface Document {
   _id: string
   id?: string
   userId: string
+  lectureId?: string
+  lectureTitle?: string
   title: string
   fileName: string
   fileSize: number
   fileType: string
-  status: "uploaded" | "processing" | "analyzing" | "completed" | "ready" | "failed"
+  status: "uploaded" | "uploading" | "processing" | "analyzing" | "completed" | "ready" | "failed"
   errorMessage?: string
   chunkCount: number
   pageCount: number
@@ -115,28 +130,41 @@ export interface QuizQuestion {
   keyPoints?: string[]
   explanation?: string
   pageNumber?: number
+  pageReferences?: number[]
+  section?: string
   topic?: string
   difficulty?: string
+  subtype?: "mcq" | "shortAnswer" | "longAnswer" | "conceptual" | "analytical" | "mixed"
+  estimatedAnswerLength?: string
 }
 
 export interface Quiz {
   _id?: string
   id: string
   userId?: string
-  documentId: string
+  documentId?: string
+  lectureId?: string
   documentTitle?: string
   title: string
   topic: string
   difficulty: "easy" | "medium" | "hard" | "mixed"
   questionType: "mcq" | "descriptive" | "mixed"
+  questionSubtype?: "mcq" | "shortAnswer" | "longAnswer" | "conceptual" | "analytical" | "mixed"
+  requestedCount?: number
+  selectedTopics?: string[]
   questions: QuizQuestion[]
   createdAt?: string
 }
 
 export interface AnswerEvaluation {
   score: number
+  accuracy?: number
   feedback: string
+  coveredPoints?: string[]
   missingKeyPoints?: string[]
+  incorrectStatements?: string[]
+  suggestions?: string
+  pageReferences?: number[]
   suggestedImprovements?: string
 }
 
@@ -150,7 +178,11 @@ export interface QuizAttemptAnswer {
   correct: boolean
   score?: number
   feedback?: string
+  coveredPoints?: string[]
   missingKeyPoints?: string[]
+  incorrectStatements?: string[]
+  suggestions?: string
+  pageReferences?: number[]
   suggestedImprovements?: string
   explanation?: string
   pageNumber?: number
@@ -161,6 +193,7 @@ export interface QuizAttemptAnswer {
 export interface QuizAttempt {
   _id?: string
   id?: string
+  quizId?: string
   student?: string
   quiz?: string | Quiz
   document?: string | Document
@@ -175,6 +208,47 @@ export interface QuizAttempt {
   answers: QuizAttemptAnswer[]
   completedAt?: string
   createdAt: string
+}
+
+export interface Flashcard {
+  front: string
+  back: string
+  category?: string
+}
+
+export interface LectureSummary {
+  local?: string
+  ai?: string
+  merged?: string
+}
+
+export interface Lecture {
+  _id?: string
+  id?: string
+  title: string
+  description?: string
+  teacher?: string | { _id?: string; name?: string; email?: string }
+  youtubeUrl?: string | null
+  videoUrl?: string | null
+  audioUrl?: string | null
+  pptUrl?: string | null
+  status: "uploaded" | "queued" | "processing" | "completed" | "failed"
+  errorMessage?: string
+  transcript?: { start?: number; end?: number; text: string }[]
+  frames?: { time?: number; text?: string; imageUrl?: string }[]
+  summary?: LectureSummary
+  quiz?: { local?: string[]; ai?: string[]; merged?: string[] }
+  quizStructured?: { question: string; options: string[]; correctAnswer: number }[]
+  bookDocumentIds?: string[]
+  flashcards?: Flashcard[]
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface LectureSummaryResponse {
+  summary: LectureSummary
+  status: string
+  errorMessage?: string
 }
 
 export interface AnalyticsOverview {

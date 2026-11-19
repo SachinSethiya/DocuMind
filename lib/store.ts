@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware"
 import { apiService } from "@/lib/api"
 import type {
   Document as DocType,
+  Lecture,
   Quiz,
   QuizAttempt,
   User,
@@ -39,9 +40,25 @@ interface AppStoreState {
   // Analytics actions
   fetchAnalytics: () => Promise<void>
 
-  // Backward compatibility legacy methods
-  lectures: any[]
+  // Lecture actions
+  lectures: Lecture[]
   fetchLectures: () => Promise<void>
+  uploadLecture: (payload: {
+    title: string
+    description?: string
+    youtubeUrl?: string
+    audioUrl?: string
+    videoFile?: File | null
+    audioFile?: File | null
+    pptFile?: File | null
+    bookFiles?: File[]
+  }) => Promise<{
+    lecture: Lecture
+    processingMode?: "queue" | "inline"
+    processingFailed?: boolean
+    message?: string
+  }>
+  deleteLecture: (id: string) => Promise<void>
 }
 
 export const useAppStore = create<AppStoreState>()(
@@ -209,9 +226,26 @@ export const useAppStore = create<AppStoreState>()(
         }
       },
 
-      // Legacy fallback
       async fetchLectures() {
-        await get().fetchDocuments()
+        try {
+          const data = await apiService.getLectures()
+          set({ lectures: data.lectures || [] })
+        } catch (error) {
+          console.error("Fetch lectures failed:", error)
+        }
+      },
+
+      async uploadLecture(payload) {
+        const result = await apiService.uploadLecture(payload)
+        await get().fetchLectures()
+        return result
+      },
+
+      async deleteLecture(id) {
+        await apiService.deleteLecture(id)
+        set((state) => ({
+          lectures: state.lectures.filter((lecture) => (lecture._id || lecture.id) !== id),
+        }))
       },
     }),
     {

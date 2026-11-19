@@ -84,6 +84,26 @@ export default function DocumentWorkspacePage() {
   // Quiz History state
   const [history, setHistory] = useState<QuizAttempt[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
+
+  // Question generation configuration
+  const [mcqConfig, setMcqConfig] = useState({
+    count: 5,
+    customCount: "",
+    difficulty: "medium" as "easy" | "medium" | "hard" | "mixed",
+    topicMode: "entire" as "entire" | "important" | "specific",
+    selectedTopic: "",
+  })
+  const [descConfig, setDescConfig] = useState({
+    count: 5,
+    customCount: "",
+    difficulty: "medium" as "easy" | "medium" | "hard" | "mixed",
+    subtype: "mixed" as "shortAnswer" | "longAnswer" | "conceptual" | "analytical" | "mixed",
+    topicMode: "entire" as "entire" | "important" | "specific",
+    selectedTopic: "",
+  })
+  const [generationError, setGenerationError] = useState("")
+  const [generationWarning, setGenerationWarning] = useState("")
 
   const loadDocument = useCallback(async () => {
     try {
@@ -107,52 +127,6 @@ export default function DocumentWorkspacePage() {
       chatBottomRef.current?.scrollIntoView({ behavior: "smooth" })
     }
   }, [messages, sendingChat, activeTab])
-
-  // Load MCQs when tab is activated
-  useEffect(() => {
-    if (activeTab === "mcqs" && mcqs.length === 0 && doc) {
-      async function fetchOrGenMcqs() {
-        setLoadingMcqs(true)
-        try {
-          const res = await apiService.generateQuiz({
-            documentId: doc!._id,
-            difficulty: "medium",
-            questionType: "mcq",
-            numQuestions: 5,
-          })
-          setMcqs(res.quiz?.questions || [])
-        } catch (err) {
-          console.error("Failed to generate MCQs:", err)
-        } finally {
-          setLoadingMcqs(false)
-        }
-      }
-      fetchOrGenMcqs()
-    }
-  }, [activeTab, mcqs.length, doc])
-
-  // Load Descriptive Questions when tab is activated
-  useEffect(() => {
-    if (activeTab === "descriptive" && descriptiveQs.length === 0 && doc) {
-      async function fetchOrGenDesc() {
-        setLoadingDescriptive(true)
-        try {
-          const res = await apiService.generateQuiz({
-            documentId: doc!._id,
-            difficulty: "medium",
-            questionType: "descriptive",
-            numQuestions: 4,
-          })
-          setDescriptiveQs(res.quiz?.questions || [])
-        } catch (err) {
-          console.error("Failed to generate descriptive questions:", err)
-        } finally {
-          setLoadingDescriptive(false)
-        }
-      }
-      fetchOrGenDesc()
-    }
-  }, [activeTab, descriptiveQs.length, doc])
 
   // Load History when tab is activated
   useEffect(() => {
@@ -228,6 +202,81 @@ export default function DocumentWorkspacePage() {
     }
   }
 
+  function topicOptions() {
+    return (doc?.topics || []).map((t) => t.name).filter(Boolean)
+  }
+
+  function resolveTopicPayload(config: typeof mcqConfig) {
+    if (config.topicMode === "specific" && config.selectedTopic) {
+      return { topic: config.selectedTopic, selectedTopics: [config.selectedTopic] }
+    }
+    if (config.topicMode === "important") {
+      const important = topicOptions().slice(0, 5)
+      return { topic: "Important Topics", selectedTopics: important }
+    }
+    return { topic: "All Topics", selectedTopics: [] }
+  }
+
+  function configuredCount(config: typeof mcqConfig) {
+    const custom = parseInt(config.customCount, 10)
+    if (Number.isInteger(custom) && custom > 0) return Math.min(20, custom)
+    return config.count
+  }
+
+  async function handleGenerateMcqs() {
+    if (!doc) return
+    const count = configuredCount(mcqConfig)
+    setLoadingMcqs(true)
+    setGenerationError("")
+    setGenerationWarning("")
+    try {
+      const res = await apiService.generateQuiz({
+        documentId: doc._id,
+        numQuestions: count,
+        difficulty: mcqConfig.difficulty,
+        questionType: "mcq",
+        ...resolveTopicPayload(mcqConfig),
+      })
+      setMcqs(res.quiz?.questions || [])
+      setSelectedOptions({})
+      setRevealedExplanations({})
+      setGenerationWarning(res.warning || "")
+    } catch (err: any) {
+      setGenerationError(err?.response?.data?.message || "Failed to generate MCQs. Please try again.")
+      setMcqs([])
+    } finally {
+      setLoadingMcqs(false)
+    }
+  }
+
+  async function handleGenerateDescriptive() {
+    if (!doc) return
+    const count = configuredCount(descConfig)
+    setLoadingDescriptive(true)
+    setGenerationError("")
+    setGenerationWarning("")
+    try {
+      const res = await apiService.generateQuiz({
+        documentId: doc._id,
+        numQuestions: count,
+        difficulty: descConfig.difficulty,
+        questionType: "descriptive",
+        questionSubtype: descConfig.subtype,
+        ...resolveTopicPayload(descConfig),
+      })
+      setDescriptiveQs(res.quiz?.questions || [])
+      setUserDescriptiveAnswers({})
+      setEvaluations({})
+      setRevealedExpected({})
+      setGenerationWarning(res.warning || "")
+    } catch (err: any) {
+      setGenerationError(err?.response?.data?.message || "Failed to generate descriptive questions. Please try again.")
+      setDescriptiveQs([])
+    } finally {
+      setLoadingDescriptive(false)
+    }
+  }
+
   // Evaluate single descriptive answer
   async function handleEvaluateDescriptive(qIndex: number, question: QuizQuestion) {
     const userAnswer = userDescriptiveAnswers[qIndex] || ""
@@ -243,6 +292,7 @@ export default function DocumentWorkspacePage() {
         expectedAnswer: question.expectedAnswer || "",
         keyPoints: question.keyPoints || [],
         userAnswer,
+        pageNumber: question.pageNumber,
       })
       setEvaluations((prev) => ({ ...prev, [qIndex]: evaluation }))
     } catch (err) {
@@ -365,6 +415,31 @@ export default function DocumentWorkspacePage() {
               </p>
             </div>
 
+            {/* Key Insights */}
+            {(() => {
+              const insights = doc.summary?.keyFindings?.length
+                ? doc.summary.keyFindings
+                : doc.analysis?.importantFacts?.length
+                  ? doc.analysis.importantFacts
+                  : doc.summary?.finalTakeaways || []
+              if (!insights.length) return null
+              return (
+                <div className="rounded-2xl border border-border bg-card p-6 space-y-3">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#EAB308]">
+                    Key Insights
+                  </span>
+                  <ul className="space-y-2 text-xs text-muted-foreground">
+                    {insights.slice(0, 8).map((item, i) => (
+                      <li key={i} className="flex items-start gap-2.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-[#EAB308] mt-1.5 shrink-0" />
+                        <span className="text-foreground leading-relaxed">{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )
+            })()}
+
             {/* Key Points */}
             {doc.analysis?.keyPoints && doc.analysis.keyPoints.length > 0 && (
               <div className="rounded-2xl border border-border bg-card p-6 space-y-3">
@@ -403,6 +478,30 @@ export default function DocumentWorkspacePage() {
                 </div>
               </div>
             )}
+
+            {/* Quick Actions */}
+            <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                Quick Actions
+              </span>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => setActiveTab("summary")} className="text-xs h-8 border-border">
+                  View Full Summary
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab("topics")} className="text-xs h-8 border-border">
+                  Explore Topics
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab("chat")} className="text-xs h-8 border-border">
+                  Ask AI
+                </Button>
+                <Button size="sm" onClick={() => setActiveTab("mcqs")} className="bg-[#EAB308] text-black hover:bg-[#EAB308]/90 font-semibold text-xs h-8">
+                  Generate MCQs
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab("descriptive")} className="text-xs h-8 border-border">
+                  Generate Descriptive Questions
+                </Button>
+              </div>
+            </div>
           </div>
 
           {/* Right Column: Metadata & Important Facts */}
@@ -449,6 +548,33 @@ export default function DocumentWorkspacePage() {
                       {fact}
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Top Topics */}
+            {doc.topics && doc.topics.length > 0 && (
+              <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#EAB308]">
+                  Top Topics
+                </span>
+                <div className="space-y-2">
+                  {[...doc.topics]
+                    .sort((a, b) => (b.importanceScore || 0) - (a.importanceScore || 0))
+                    .slice(0, 8)
+                    .map((topic, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setActiveTab("topics")}
+                        className="w-full text-left p-2.5 rounded-lg bg-secondary/40 border border-border/50 hover:border-[#EAB308]/40 transition-colors"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-foreground truncate">{topic.name}</span>
+                          <span className="text-[10px] text-muted-foreground shrink-0">{topic.importanceScore || 0}</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">{topic.explanation}</p>
+                      </button>
+                    ))}
                 </div>
               </div>
             )}
@@ -500,12 +626,21 @@ export default function DocumentWorkspacePage() {
             </Button>
           </div>
 
-          <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
+          <div className="rounded-2xl border border-border bg-card p-6 space-y-5">
             {summaryMode === "short" && (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-[#EAB308]">
                   Core Thesis & Executive Summary
                 </span>
+                {doc.summary?.documentOverview && (
+                  <p className="text-sm text-foreground leading-relaxed">{doc.summary.documentOverview}</p>
+                )}
+                {doc.summary?.mainObjective && (
+                  <div className="p-3 rounded-xl bg-secondary/40 border border-border/50">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Main Objective</span>
+                    <p className="text-xs text-foreground mt-1 leading-relaxed">{doc.summary.mainObjective}</p>
+                  </div>
+                )}
                 <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
                   {doc.summary?.shortSummary ||
                     doc.summary?.executiveSummary ||
@@ -515,14 +650,70 @@ export default function DocumentWorkspacePage() {
             )}
 
             {summaryMode === "detailed" && (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-[#EAB308]">
                   Comprehensive Detailed Narrative
                 </span>
-                <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap font-sans">
-                  {doc.summary?.detailedSummary ||
-                    doc.analysis?.overview ||
-                    "Detailed summary available."}
+                {doc.summary?.documentOverview && (
+                  <div>
+                    <h4 className="text-xs font-bold text-foreground mb-1">Document Overview</h4>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{doc.summary.documentOverview}</p>
+                  </div>
+                )}
+                {doc.summary?.mainObjective && (
+                  <div className="p-3 rounded-xl bg-secondary/40 border border-border/50">
+                    <h4 className="text-xs font-bold text-foreground">Main Objective</h4>
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{doc.summary.mainObjective}</p>
+                  </div>
+                )}
+                {doc.summary?.importantConcepts && doc.summary.importantConcepts.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold text-foreground mb-2">Important Concepts</h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {doc.summary.importantConcepts.map((c, i) => (
+                        <span key={i} className="text-[11px] px-2.5 py-1 rounded-lg bg-accent border border-border/50 text-foreground">{c}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {doc.summary?.keyPoints && doc.summary.keyPoints.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold text-foreground mb-2">Key Points</h4>
+                    <ul className="space-y-1.5 text-xs text-muted-foreground">
+                      {doc.summary.keyPoints.map((pt, i) => (
+                        <li key={i} className="flex items-start gap-2"><span className="text-[#EAB308]">•</span><span>{pt}</span></li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {doc.summary?.importantDefinitions && doc.summary.importantDefinitions.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold text-foreground mb-2">Important Definitions</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {doc.summary.importantDefinitions.map((d, i) => (
+                        <div key={i} className="p-3 rounded-xl border border-border bg-secondary/30">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-semibold text-foreground">{d.term}</span>
+                            <SourceReference pageNumber={d.pageNumber || 1} compact />
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">{d.definition}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {doc.summary?.keyFindings && doc.summary.keyFindings.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold text-foreground mb-2">Key Findings</h4>
+                    <ul className="space-y-1.5 text-xs text-muted-foreground">
+                      {doc.summary.keyFindings.map((f, i) => (
+                        <li key={i} className="flex items-start gap-2"><span className="text-[#EAB308]">•</span><span>{f}</span></li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap font-sans pt-2 border-t border-border/60">
+                  {doc.summary?.detailedSummary || doc.analysis?.overview || "Detailed summary available."}
                 </div>
               </div>
             )}
@@ -547,6 +738,20 @@ export default function DocumentWorkspacePage() {
                 ) : (
                   <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap font-sans">
                     {doc.summary?.sectionWiseSummary || "Section-wise summary available."}
+                  </div>
+                )}
+                {doc.summary?.importantDefinitions && doc.summary.importantDefinitions.length > 0 && (
+                  <div className="pt-3 border-t border-border/60">
+                    <h4 className="text-xs font-bold text-foreground mb-2">Important Definitions</h4>
+                    <div className="space-y-2">
+                      {doc.summary.importantDefinitions.map((d, i) => (
+                        <div key={i} className="flex items-start justify-between gap-3 text-xs">
+                          <span className="font-semibold text-foreground">{d.term}</span>
+                          <span className="text-muted-foreground flex-1">{d.definition}</span>
+                          <SourceReference pageNumber={d.pageNumber || 1} compact />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -614,30 +819,84 @@ export default function DocumentWorkspacePage() {
 
             {doc.topics && doc.topics.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {doc.topics.map((t, i) => (
-                  <div
-                    key={i}
-                    className="p-4 rounded-xl border border-border bg-secondary/30 space-y-2 hover:border-[#EAB308]/40 transition-colors"
-                  >
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-foreground">{t.name}</h4>
-                      <SourceReference pageNumber={t.pageNumber || 1} section={t.section || t.name} compact />
-                    </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed">{t.explanation}</p>
-                    {t.subtopics && t.subtopics.length > 0 && (
-                      <div className="flex flex-wrap gap-1 pt-1">
-                        {t.subtopics.map((sub, j) => (
-                          <span
-                            key={j}
-                            className="text-[10px] px-2 py-0.5 rounded-md bg-accent text-muted-foreground border border-border/50"
-                          >
-                            {sub}
-                          </span>
-                        ))}
+                {[...doc.topics]
+                  .sort((a, b) => (b.importanceScore || 0) - (a.importanceScore || 0))
+                  .map((t, i) => (
+                    <div
+                      key={i}
+                      className="p-4 rounded-xl border border-border bg-secondary/30 space-y-3 hover:border-[#EAB308]/40 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-xs font-bold text-foreground truncate">{t.name}</h4>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#EAB308]/15 text-[#EAB308] font-semibold shrink-0">
+                              {t.importanceScore || 0}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-1">{t.section || `Page ${t.pageNumber || 1}`}</p>
+                        </div>
+                        <SourceReference pageNumber={t.pageNumber || 1} section={t.section || t.name} compact />
                       </div>
-                    )}
-                  </div>
-                ))}
+                      <p className="text-xs text-muted-foreground leading-relaxed">{t.explanation}</p>
+                      {t.subtopics && t.subtopics.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {t.subtopics.map((sub, j) => (
+                            <span key={j} className="text-[10px] px-2 py-0.5 rounded-md bg-accent text-muted-foreground border border-border/50">
+                              {sub}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {t.relatedKeywords && t.relatedKeywords.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {t.relatedKeywords.slice(0, 6).map((kw, j) => (
+                            <span key={j} className="text-[10px] px-2 py-0.5 rounded-md bg-secondary text-muted-foreground border border-border/40">
+                              #{kw}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {t.pageReferences && t.pageReferences.length > 1 && (
+                        <p className="text-[10px] text-muted-foreground">Pages: {t.pageReferences.slice(0, 8).join(", ")}</p>
+                      )}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[11px] border-border"
+                          onClick={() => {
+                            setActiveTab("chat")
+                            handleSendChat(`Explain "${t.name}" in detail and cite the relevant pages.`)
+                          }}
+                        >
+                          Ask AI
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[11px] border-border"
+                          onClick={() => {
+                            setMcqConfig((prev) => ({ ...prev, topicMode: "specific", selectedTopic: t.name }))
+                            setActiveTab("mcqs")
+                          }}
+                        >
+                          Generate MCQs
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[11px] border-border"
+                          onClick={() => {
+                            setDescConfig((prev) => ({ ...prev, topicMode: "specific", selectedTopic: t.name }))
+                            setActiveTab("descriptive")
+                          }}
+                        >
+                          Generate Questions
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
               </div>
             ) : (
               <p className="text-xs text-muted-foreground">Topics parsed.</p>
@@ -799,40 +1058,90 @@ export default function DocumentWorkspacePage() {
       ─────────────────────────────────────────────────────────────── */}
       {activeTab === "mcqs" && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-foreground">
-                Multiple-Choice Question Practice
-              </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Questions generated strictly from this document with one correct answer and verified page references.
-              </p>
+          <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+            <div className="flex flex-col lg:flex-row lg:items-end gap-3">
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Number of Questions</span>
+                <div className="flex items-center gap-1.5">
+                  {[5, 10, 15, 20].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setMcqConfig((prev) => ({ ...prev, count: n, customCount: "" }))}
+                      className={cn(
+                        "px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors",
+                        mcqConfig.count === n && !mcqConfig.customCount
+                          ? "bg-[#EAB308] text-black border-[#EAB308]"
+                          : "border-border text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                  <Input
+                    value={mcqConfig.customCount}
+                    onChange={(e) => setMcqConfig((prev) => ({ ...prev, customCount: e.target.value }))}
+                    placeholder="Custom"
+                    className="h-8 w-20 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Difficulty</span>
+                <select
+                  value={mcqConfig.difficulty}
+                  onChange={(e) => setMcqConfig((prev) => ({ ...prev, difficulty: e.target.value as any }))}
+                  className="h-8 rounded-lg border border-border bg-background px-2 text-xs text-foreground"
+                >
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                  <option value="mixed">Mixed</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Topics</span>
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={mcqConfig.topicMode}
+                    onChange={(e) => setMcqConfig((prev) => ({ ...prev, topicMode: e.target.value as any }))}
+                    className="h-8 rounded-lg border border-border bg-background px-2 text-xs text-foreground"
+                  >
+                    <option value="entire">Entire Document</option>
+                    <option value="important">Important Topics</option>
+                    <option value="specific">Select Topic</option>
+                  </select>
+                  {mcqConfig.topicMode === "specific" && (
+                    <select
+                      value={mcqConfig.selectedTopic}
+                      onChange={(e) => setMcqConfig((prev) => ({ ...prev, selectedTopic: e.target.value }))}
+                      className="h-8 rounded-lg border border-border bg-background px-2 text-xs text-foreground max-w-[180px]"
+                    >
+                      <option value="">Choose topic</option>
+                      {topicOptions().map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              <Button
+                onClick={handleGenerateMcqs}
+                disabled={loadingMcqs || (mcqConfig.topicMode === "specific" && !mcqConfig.selectedTopic)}
+                className="bg-[#EAB308] text-black hover:bg-[#EAB308]/90 font-semibold text-xs h-8 rounded-lg self-end"
+              >
+                {loadingMcqs ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+                Generate MCQs
+              </Button>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={async () => {
-                setLoadingMcqs(true)
-                try {
-                  const res = await apiService.generateQuiz({
-                    documentId: doc._id,
-                    difficulty: "medium",
-                    questionType: "mcq",
-                    numQuestions: 5,
-                  })
-                  setMcqs(res.quiz?.questions || [])
-                  setSelectedOptions({})
-                  setRevealedExplanations({})
-                } finally {
-                  setLoadingMcqs(false)
-                }
-              }}
-              disabled={loadingMcqs}
-              className="text-xs h-8 border-border"
-            >
-              <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5", loadingMcqs && "animate-spin")} />
-              Generate More MCQs
-            </Button>
+            {generationError && (
+              <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-500">{generationError}</div>
+            )}
+            {generationWarning && !generationError && (
+              <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">{generationWarning}</div>
+            )}
           </div>
 
           {loadingMcqs ? (
@@ -858,9 +1167,14 @@ export default function DocumentWorkspacePage() {
                         <span className="h-6 w-6 rounded-lg bg-secondary text-foreground text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
                           {idx + 1}
                         </span>
-                        <h3 className="text-xs font-semibold text-foreground leading-relaxed">
-                          {q.question}
-                        </h3>
+                        <div>
+                          <h3 className="text-xs font-semibold text-foreground leading-relaxed">
+                            {q.question}
+                          </h3>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            {q.topic || "General"}{q.difficulty ? ` · ${q.difficulty}` : ""}{q.section ? ` · ${q.section}` : ""}
+                          </p>
+                        </div>
                       </div>
                       <SourceReference pageNumber={q.pageNumber || 1} compact />
                     </div>
@@ -932,40 +1246,105 @@ export default function DocumentWorkspacePage() {
       ─────────────────────────────────────────────────────────────── */}
       {activeTab === "descriptive" && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-foreground">
-                Descriptive Questions & AI Answer Evaluation
-              </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Answer conceptual questions and receive instant AI evaluation based on document key points.
-              </p>
+          <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+            <div className="flex flex-col lg:flex-row lg:items-end gap-3">
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Number of Questions</span>
+                <div className="flex items-center gap-1.5">
+                  {[5, 10, 15, 20].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setDescConfig((prev) => ({ ...prev, count: n, customCount: "" }))}
+                      className={cn(
+                        "px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors",
+                        descConfig.count === n && !descConfig.customCount
+                          ? "bg-[#EAB308] text-black border-[#EAB308]"
+                          : "border-border text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                  <Input
+                    value={descConfig.customCount}
+                    onChange={(e) => setDescConfig((prev) => ({ ...prev, customCount: e.target.value }))}
+                    placeholder="Custom"
+                    className="h-8 w-20 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Difficulty</span>
+                <select
+                  value={descConfig.difficulty}
+                  onChange={(e) => setDescConfig((prev) => ({ ...prev, difficulty: e.target.value as any }))}
+                  className="h-8 rounded-lg border border-border bg-background px-2 text-xs text-foreground"
+                >
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                  <option value="mixed">Mixed</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Question Type</span>
+                <select
+                  value={descConfig.subtype}
+                  onChange={(e) => setDescConfig((prev) => ({ ...prev, subtype: e.target.value as any }))}
+                  className="h-8 rounded-lg border border-border bg-background px-2 text-xs text-foreground"
+                >
+                  <option value="mixed">Mixed</option>
+                  <option value="shortAnswer">Short Answer</option>
+                  <option value="longAnswer">Long Answer</option>
+                  <option value="conceptual">Conceptual</option>
+                  <option value="analytical">Analytical</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Topics</span>
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={descConfig.topicMode}
+                    onChange={(e) => setDescConfig((prev) => ({ ...prev, topicMode: e.target.value as any }))}
+                    className="h-8 rounded-lg border border-border bg-background px-2 text-xs text-foreground"
+                  >
+                    <option value="entire">Entire Document</option>
+                    <option value="important">Important Topics</option>
+                    <option value="specific">Select Topic</option>
+                  </select>
+                  {descConfig.topicMode === "specific" && (
+                    <select
+                      value={descConfig.selectedTopic}
+                      onChange={(e) => setDescConfig((prev) => ({ ...prev, selectedTopic: e.target.value }))}
+                      className="h-8 rounded-lg border border-border bg-background px-2 text-xs text-foreground max-w-[180px]"
+                    >
+                      <option value="">Choose topic</option>
+                      {topicOptions().map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              <Button
+                onClick={handleGenerateDescriptive}
+                disabled={loadingDescriptive || (descConfig.topicMode === "specific" && !descConfig.selectedTopic)}
+                className="bg-[#EAB308] text-black hover:bg-[#EAB308]/90 font-semibold text-xs h-8 rounded-lg self-end"
+              >
+                {loadingDescriptive ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+                Generate Questions
+              </Button>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={async () => {
-                setLoadingDescriptive(true)
-                try {
-                  const res = await apiService.generateQuiz({
-                    documentId: doc._id,
-                    difficulty: "medium",
-                    questionType: "descriptive",
-                    numQuestions: 4,
-                  })
-                  setDescriptiveQs(res.quiz?.questions || [])
-                  setUserDescriptiveAnswers({})
-                  setEvaluations({})
-                } finally {
-                  setLoadingDescriptive(false)
-                }
-              }}
-              disabled={loadingDescriptive}
-              className="text-xs h-8 border-border"
-            >
-              <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5", loadingDescriptive && "animate-spin")} />
-              Generate More Questions
-            </Button>
+            {generationError && (
+              <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-500">{generationError}</div>
+            )}
+            {generationWarning && !generationError && (
+              <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">{generationWarning}</div>
+            )}
           </div>
 
           {loadingDescriptive ? (
@@ -996,6 +1375,9 @@ export default function DocumentWorkspacePage() {
                           </h3>
                           <p className="text-[11px] text-muted-foreground mt-0.5">
                             Topic: {q.topic || "General"} · Page {q.pageNumber || 1}
+                            {q.subtype && q.subtype !== "mcq" ? ` · ${q.subtype}` : ""}
+                            {q.estimatedAnswerLength ? ` · ${q.estimatedAnswerLength}` : ""}
+                            {q.difficulty ? ` · ${q.difficulty}` : ""}
                           </p>
                         </div>
                       </div>
@@ -1064,18 +1446,29 @@ export default function DocumentWorkspacePage() {
                       <div className="p-4 rounded-xl border border-border bg-secondary/50 space-y-2.5 mt-2">
                         <div className="flex items-center justify-between border-b border-border/60 pb-2">
                           <span className="text-xs font-bold text-foreground">AI Evaluation Result</span>
-                          <span
-                            className={cn(
-                              "text-xs font-bold px-2 py-0.5 rounded-full border",
-                              evalData.score >= 70
-                                ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                                : "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                          <div className="flex items-center gap-2">
+                            {evalData.accuracy !== undefined && (
+                              <span className="text-[11px] text-muted-foreground">Accuracy {evalData.accuracy}%</span>
                             )}
-                          >
-                            Score: {evalData.score}/100
-                          </span>
+                            <span
+                              className={cn(
+                                "text-xs font-bold px-2 py-0.5 rounded-full border",
+                                evalData.score >= 70
+                                  ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                                  : "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                              )}
+                            >
+                              Score: {evalData.score}/100
+                            </span>
+                          </div>
                         </div>
                         <p className="text-xs text-foreground leading-relaxed">{evalData.feedback}</p>
+
+                        {evalData.coveredPoints && evalData.coveredPoints.length > 0 && (
+                          <div className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                            <strong>Covered:</strong> {evalData.coveredPoints.join(", ")}
+                          </div>
+                        )}
 
                         {evalData.missingKeyPoints && evalData.missingKeyPoints.length > 0 && (
                           <div className="text-[11px] text-amber-600 dark:text-amber-400">
@@ -1083,9 +1476,15 @@ export default function DocumentWorkspacePage() {
                           </div>
                         )}
 
-                        {evalData.suggestedImprovements && (
+                        {evalData.incorrectStatements && evalData.incorrectStatements.length > 0 && (
+                          <div className="text-[11px] text-red-500">
+                            <strong>Incorrect Statements:</strong> {evalData.incorrectStatements.join(", ")}
+                          </div>
+                        )}
+
+                        {(evalData.suggestions || evalData.suggestedImprovements) && (
                           <p className="text-[11px] text-muted-foreground italic">
-                            Improvement tip: {evalData.suggestedImprovements}
+                            Improvement tip: {evalData.suggestions || evalData.suggestedImprovements}
                           </p>
                         )}
                       </div>
@@ -1152,30 +1551,99 @@ export default function DocumentWorkspacePage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {history.map((att) => (
-                <div key={att._id || att.id} className="rounded-xl border border-border bg-card p-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="text-xs font-semibold text-foreground">
-                        {att.topic || "Document Quiz"} · <span className="capitalize">{att.difficulty}</span>
-                      </h4>
-                      <p className="text-[11px] text-muted-foreground">
-                        {formatDistanceToNow(new Date(att.createdAt), { addSuffix: true })} · {att.total} questions
-                      </p>
-                    </div>
-                    <span
-                      className={cn(
-                        "text-xs font-bold px-2.5 py-1 rounded-full border",
-                        att.score >= 70
-                          ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                          : "bg-amber-500/10 text-amber-500 border-amber-500/20"
-                      )}
+              {history.map((att) => {
+                const quiz = typeof att.quiz === "object" ? att.quiz : null
+                const attemptId = att._id || att.id || ""
+                const isOpen = expandedHistoryId === attemptId
+                return (
+                  <div key={attemptId} className="rounded-xl border border-border bg-card overflow-hidden">
+                    <button
+                      onClick={() => setExpandedHistoryId(isOpen ? null : attemptId)}
+                      className="w-full text-left p-4 space-y-2 hover:bg-accent/30 transition-colors"
                     >
-                      {att.score}%
-                    </span>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <h4 className="text-xs font-semibold text-foreground truncate">
+                            {quiz?.title || att.topic || "Document Quiz"}
+                          </h4>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            {formatDistanceToNow(new Date(att.createdAt), { addSuffix: true })} · {att.total} questions
+                            {att.timeSpent ? ` · ${Math.round(att.timeSpent / 60)}m` : ""}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            {quiz?.questionType || "quiz"}{quiz?.questionSubtype && quiz.questionSubtype !== "mcq" ? ` · ${quiz.questionSubtype}` : ""}
+                          </span>
+                          <span
+                            className={cn(
+                              "text-xs font-bold px-2.5 py-1 rounded-full border",
+                              att.score >= 70
+                                ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                                : "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                            )}
+                          >
+                            {att.score}%
+                          </span>
+                          {isOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                        <span>{att.correct}/{att.total} correct</span>
+                        <span>·</span>
+                        <span>Accuracy {att.accuracy}%</span>
+                        {quiz?.selectedTopics?.length ? <><span>·</span><span>{quiz.selectedTopics.join(", ")}</span></> : null}
+                      </div>
+                    </button>
+
+                    {isOpen && (
+                      <div className="border-t border-border p-4 space-y-3 bg-secondary/20">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Answer Review</span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[11px] border-border"
+                            onClick={() => router.push(`/dashboard/quizzes?documentId=${doc._id}`)}
+                          >
+                            Retake Quiz
+                          </Button>
+                        </div>
+                        <div className="space-y-3">
+                          {(att.answers || []).map((ans, idx) => (
+                            <div key={idx} className="p-3 rounded-xl border border-border bg-card space-y-2">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-xs font-semibold text-foreground">{ans.question}</p>
+                                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                                    {ans.type || "mcq"} · Page {ans.pageNumber || 1}{ans.topic ? ` · ${ans.topic}` : ""}
+                                  </p>
+                                </div>
+                                <span className={cn("text-[11px] font-bold px-2 py-0.5 rounded-full border", ans.correct ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-red-500/10 text-red-500 border-red-500/20")}>
+                                  {ans.correct ? "Correct" : "Review"}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-muted-foreground space-y-1">
+                                {ans.type === "descriptive" ? (
+                                  <p><span className="font-semibold text-foreground">Your answer:</span> {ans.userAnswer || "No answer"}</p>
+                                ) : (
+                                  <p><span className="font-semibold text-foreground">Selected:</span> {ans.selected || "No answer"}</p>
+                                )}
+                                {ans.score !== undefined && <p><span className="font-semibold text-foreground">Score:</span> {ans.score}/100</p>}
+                                {ans.feedback && <p>{ans.feedback}</p>}
+                                {ans.missingKeyPoints?.length ? <p><span className="font-semibold text-foreground">Missing:</span> {ans.missingKeyPoints.join(", ")}</p> : null}
+                                {ans.incorrectStatements?.length ? <p><span className="font-semibold text-foreground">Incorrect:</span> {ans.incorrectStatements.join(", ")}</p> : null}
+                                {ans.suggestions && <p className="italic">Tip: {ans.suggestions}</p>}
+                                {ans.explanation && <p><span className="font-semibold text-foreground">Explanation:</span> {ans.explanation}</p>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
