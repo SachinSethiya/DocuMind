@@ -1,16 +1,18 @@
 /**
- * LLM Client: OpenAI (gpt-4.1-mini).
+ * LLM Client: Google Gemini via @google/genai.
  * Exported function names keep the legacy gemini* identifiers so existing
  * services continue to work without import changes.
  */
 
-const OpenAI = require("openai");
+const { GoogleGenAI } = require("@google/genai");
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const PRIMARY_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-3.5-flash-lite";
 const LLM_TIMEOUT_MS = parseInt(process.env.LLM_TIMEOUT_MS || "120000", 10);
 
-const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
+const GEMINI_MODELS = [...new Set([PRIMARY_MODEL, FALLBACK_MODEL].filter(Boolean))];
+const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -27,45 +29,61 @@ function withTimeout(promise, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-function historyToMessages(history = []) {
-  if (!Array.isArray(history)) return [];
-  return history
-    .map((m) => {
-      let role = m?.role;
-      let content = "";
-      if (typeof m?.content === "string") content = m.content;
-      else if (Array.isArray(m?.parts)) content = m.parts.map((p) => p?.text || "").join("\n");
-      if (role === "model") role = "assistant";
-      if (!["system", "user", "assistant"].includes(role)) role = "user";
-      return content ? { role, content } : null;
-    })
-    .filter(Boolean);
+function normalizeRole(role) {
+  if (role === "model" || role === "assistant") return "model";
+  return "user";
 }
 
-async function callOpenAI(systemPrompt, userMessage, opts = {}) {
-  const messages = [
-    { role: "system", content: systemPrompt },
-    ...historyToMessages(opts.history),
-    { role: "user", content: userMessage },
-  ];
+function contentText(m) {
+  if (typeof m?.content === "string") return m.content;
+  if (Array.isArray(m?.parts)) return m.parts.map((p) => p?.text || "").join("\n");
+  return "";
+}
 
-  const params = {
-    model: OPENAI_MODEL,
-    messages,
+function buildContents(history = [], userMessage) {
+  const contents = [];
+  for (const m of history || []) {
+    const text = contentText(m);
+    if (text) contents.push({ role: normalizeRole(m?.role), parts: [{ text }] });
+  }
+  contents.push({ role: "user", parts: [{ text: userMessage }] });
+  return contents;
+}
+
+function extractText(response) {
+  if (typeof response?.text === "string") return response.text;
+  if (typeof response?.text === "function") {
+    const t = response.text();
+    return typeof t === "string" ? t : "";
+  }
+  const parts = response?.candidates?.[0]?.content?.parts || [];
+  return parts.map((p) => p?.text || "").join("");
+}
+
+async function callGemini(modelName, systemPrompt, userMessage, opts = {}) {
+  const config = {
+    systemInstruction: systemPrompt,
     temperature: opts.temperature ?? 0.7,
-    max_completion_tokens: opts.maxTokens || 2048,
+    maxOutputTokens: opts.maxTokens || 2048,
   };
-  if (opts.json) params.response_format = { type: "json_object" };
+  if (opts.json) config.responseMimeType = "application/json";
 
-  const completion = await withTimeout(openai.chat.completions.create(params), "OpenAI request");
-  const content = completion?.choices?.[0]?.message?.content;
-  if (!content || !String(content).trim()) {
-    const err = new Error("OpenAI returned an empty response.");
+  const response = await withTimeout(
+    ai.models.generateContent({
+      model: modelName,
+      contents: buildContents(opts.history, userMessage),
+      config,
+    }),
+    "Gemini request"
+  );
+  const text = extractText(response);
+  if (!text || !String(text).trim()) {
+    const err = new Error("Gemini returned an empty response.");
     err.code = "LLM_EMPTY_RESPONSE";
     err.retryable = true;
     throw err;
   }
-  return content;
+  return text;
 }
 
 function errorStatus(err) {
@@ -84,6 +102,18 @@ function isTransientStatus(status) {
   return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
 }
 
+function isModelSpecificError(err) {
+  const status = errorStatus(err);
+  const msg = String(err?.message || "").toLowerCase();
+  return (
+    status === 404 ||
+    (status === 400 && (msg.includes("model") || msg.includes("not found") || msg.includes("not supported"))) ||
+    msg.includes("is not found") ||
+    msg.includes("not supported for generatecontent") ||
+    msg.includes("models/")
+  );
+}
+
 function isPermanentError(err) {
   const status = errorStatus(err);
   if ([400, 401, 403, 404].includes(status)) return true;
@@ -92,13 +122,17 @@ function isPermanentError(err) {
   const apiCode = String(err?.error?.code || "").toLowerCase();
   return (
     msg.includes("invalid api key") ||
+    msg.includes("api key not valid") ||
     msg.includes("incorrect api key") ||
-    msg.includes("insufficient_quota") ||
-    msg.includes("exceeded your current quota") ||
     msg.includes("permission denied") ||
     msg.includes("does not exist") ||
     msg.includes("model_not_found") ||
     msg.includes("model not found") ||
+    msg.includes("insufficient_quota") ||
+    msg.includes("exceeded your current quota") ||
+    msg.includes("quota exceeded") ||
+    msg.includes("no credits remaining") ||
+    msg.includes("add credits") ||
     code.includes("invalid_api_key") ||
     code.includes("insufficient_quota") ||
     apiCode.includes("invalid_api_key") ||
@@ -114,27 +148,43 @@ function isRetryableLLMError(err) {
 }
 
 /**
- * Call OpenAI with classified error handling.
- * Permanent failures (bad key, quota, model missing) are not retried upstream.
+ * Call Gemini with ordered primary/fallback model handling.
+ * Model-specific failures (404/unsupported model) move to the fallback model.
+ * Permanent non-model failures (bad key, quota) stop immediately.
  */
 async function geminiChat(systemPrompt, userMessage, opts = {}) {
-  if (!openai) {
-    const err = new Error("No LLM available. Set OPENAI_API_KEY.");
+  if (!ai) {
+    const err = new Error("No LLM available. Set GEMINI_API_KEY.");
     err.code = "LLM_NOT_CONFIGURED";
     err.retryable = false;
     throw err;
   }
 
-  try {
-    return await callOpenAI(systemPrompt, userMessage, opts);
-  } catch (err) {
-    const status = errorStatus(err);
-    const permanent = isPermanentError(err);
-    err.code = permanent ? "LLM_PERMANENT" : err.code || "LLM_ERROR";
-    err.status = status;
-    err.retryable = !permanent;
-    throw err;
+  const failures = [];
+  for (const modelName of GEMINI_MODELS) {
+    try {
+      return await callGemini(modelName, systemPrompt, userMessage, opts);
+    } catch (err) {
+      const status = errorStatus(err);
+      const permanent = isPermanentError(err);
+      const modelSpecific = isModelSpecificError(err);
+      failures.push({ model: modelName, status, permanent, modelSpecific, message: safeErrorMessage(err) });
+      console.warn(`[gemini] ${modelName} failed (${status || "error"}): ${safeErrorMessage(err)}`);
+      if (permanent && !modelSpecific && status !== 429) break;
+      if (status === 429 || status === 503) await sleep(1000);
+    }
   }
+
+  if (!failures.length) {
+    throw new Error("No Gemini models configured.");
+  }
+
+  const summary = failures.map((f) => `${f.model}: ${f.status || "error"} ${f.message}`).join(" | ");
+  const err = new Error(`Gemini request failed. ${summary}`);
+  err.code = "LLM_ALL_FAILED";
+  err.status = failures.map((f) => f.status).find((s) => isTransientStatus(s)) || failures.map((f) => f.status).filter(Boolean).pop() || 500;
+  err.retryable = failures.some((f) => !f.permanent);
+  throw err;
 }
 
 function stripCodeFences(text) {
@@ -225,7 +275,7 @@ function parseJSONResponse(raw) {
     }
   }
 
-  throw new Error(`OpenAI JSON parse failed: ${cleaned.slice(0, 300)}`);
+  throw new Error(`Gemini JSON parse failed: ${cleaned.slice(0, 300)}`);
 }
 
 async function geminiJSON(systemPrompt, userMessage, opts = {}) {

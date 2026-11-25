@@ -6,8 +6,8 @@ import { Toaster } from 'sonner'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Lecture Lens - AI-Powered Learning Platform',
-  description: 'Transform lectures into interactive learning with AI transcription, smart summaries, and auto-generated quizzes.',
+  title: 'DocuMind - AI-Powered Document Intelligence and Learning Platform',
+  description: 'Upload documents and transform them into summaries, topics, AI chat, MCQs, descriptive questions, and quizzes with DocuMind.',
 }
 
 export default function RootLayout({

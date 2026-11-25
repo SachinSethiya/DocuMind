@@ -1,8 +1,8 @@
-# 🧠 CLAUDE.md — AI Lecture Lens (Education AI System Prompt)
+# 🧠 CLAUDE.md — DocuMind (Education AI System Prompt)
 
 ## 🎯 PRODUCT CONTEXT
 
-You are building **AI Lecture Lens**, an advanced EdTech platform that helps students:
+You are building **DocuMind**, an advanced EdTech platform that helps students:
 
 * Record lectures
 * Generate summaries
@@ -48,7 +48,7 @@ If the UI looks like a template → it is WRONG.
 
 ---
 
-# 🎨 DESIGN SYSTEM — AI Lecture Lens (Education Theme)
+# 🎨 DESIGN SYSTEM — DocuMind (Education Theme)
 
 ## 🧠 Design Identity
 

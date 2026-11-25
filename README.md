@@ -1,174 +1,225 @@
-# Lecture Lens
+﻿# DocuMind
 
-An AI-powered EdTech platform that turns any lecture into structured study material. Upload a video, audio file, slide deck, or YouTube link and the system automatically generates timestamped transcripts, Gemini-powered summaries, and MCQ quizzes — in under a minute.
+**AI-Powered Document Intelligence and Learning Platform**
 
-## What is in this repo
+DocuMind turns PDFs and Word documents into structured study material: document analysis, topic and keyword extraction, rich summaries, Ask-AI chat, MCQ generation, descriptive questions, answer evaluation, and quiz history.
 
-- `app/` — Next.js 15 frontend: auth, dashboard, lectures, summaries, quizzes, analytics
-- `smart-lecture-ai-backend/backend/` — Express API, MongoDB models, BullMQ queue, AI orchestration
-- `smart-lecture-ai-backend/python-ai/` — FastAPI service for local transcription (faster-whisper), OCR frame extraction, and text cleaning
+## Main features
 
-## Architecture
+- Document upload and processing for PDF/DOCX
+- Page-aware text extraction and chunking
+- AI document analysis: overview, executive summary, key points, definitions, concepts, keywords, and ranked topics
+- Structured summaries: short, detailed, section-wise, chapter summaries, key findings, and takeaways
+- Ask AI chat grounded in the uploaded document
+- MCQ generation with topic, difficulty, count, page references, explanations, and validation
+- Descriptive question generation with expected answers, key points, subtype, and difficulty
+- Descriptive answer evaluation with feedback, covered/missing points, and suggestions
+- Quiz generation, attempts, scoring, and history review
+- Lecture ingestion support for video/audio/YouTube workflows
+- Optional Python AI microservice for transcription, OCR/frame extraction, document parsing, and ChromaDB vector storage
+
+## Technology stack
 
 | Layer | Stack |
 |---|---|
-| Frontend | Next.js 15, React 19, Tailwind CSS, Zustand, Radix UI |
-| Backend API | Express, MongoDB, BullMQ, Redis |
-| Primary transcription | Groq Whisper API (`whisper-large-v3-turbo`) — ~10s for a full lecture |
-| Fallback transcription | FastAPI + faster-whisper (local CPU, `int8`) |
-| LLM — summary & quiz | Gemini 2.0 Flash → Gemini 2.0 Flash Lite → Groq Llama 3.3 70B (auto-fallback chain) |
-| YouTube download | yt-dlp |
-| Audio conversion | imageio_ffmpeg (bundled binary, no system ffmpeg needed) |
-| Vector store | ChromaDB (semantic retrieval for RAG-based summary/quiz) |
+| Frontend | Next.js, React, TypeScript, Tailwind CSS, Radix UI, Zustand, Axios |
+| Backend API | Node.js, Express, MongoDB/Mongoose, JWT auth, BullMQ/Redis optional queue |
+| AI/LLM | Google Gemini with Groq fallback; provider/model fallback chain |
+| AI microservice | Python, FastAPI, faster-whisper, OpenCV/Tesseract OCR, ChromaDB |
+| Storage | Local uploads or Cloudinary; MongoDB for app data |
 
-## Processing pipeline
+## Project architecture
 
+```text
+DocuMind/
+├── app/                         # Next.js frontend routes and pages
+├── components/                  # Shared UI components
+├── hooks/                       # React hooks
+├── lib/                         # API client, types, utilities, store
+├── public/                      # Static assets
+├── styles/                      # Global/style assets
+├── services/
+│   ├── backend/                 # Express API, MongoDB models, workers, tests
+│   │   └── src/
+│   │       ├── config/
+│   │       ├── controllers/
+│   │       ├── middlewares/
+│   │       ├── models/
+│   │       ├── queues/
+│   │       ├── routes/
+│   │       ├── services/
+│   │       └── ai_models/       # Python AI modules used by parser/worker fallbacks
+│   └── python-ai/               # FastAPI AI microservice
+├── package.json                 # Frontend package and root scripts
+├── README.md
+└── configuration files
 ```
-YouTube URL / video / audio / slides
-        │
-        ▼
-   yt-dlp download (YouTube) or file upload
-        │
-        ▼
-   Groq Whisper API  ──fail──►  FastAPI faster-whisper  ──fail──►  local spawnSync
-        │
-        ▼
-   ChromaDB ingest  (vector store for RAG)
-        │
-        ├──► Gemini 2.0 Flash summary  (structured markdown, ~2–5s)
-        │
-        └──► Gemini 2.0 Flash MCQ quiz  (7 questions, structured JSON)
-```
 
-**Processing modes:**
-- **Queue mode** — lecture jobs go to BullMQ when Redis is available. Worker picks them up asynchronously.
-- **Inline mode** — same pipeline runs directly in the API when Redis is unavailable.
+The frontend intentionally remains at the repository root because this is a Next.js application. Backend and Python AI services live under `services/` to keep the working architecture stable.
 
-## Tested pipeline results
-
-Tested against the 3Blue1Brown "But what is a neural network?" YouTube lecture:
-
-| Step | Result |
-|---|---|
-| Upload + queue | ~327 ms |
-| Groq Whisper transcription | 263 segments |
-| Gemini summary | 2,425-char structured markdown |
-| Quiz generation | 7 MCQ questions with 4 options + correct answer index |
-| Summary page | Renders with Merged / Local Model / OpenAI tabs |
-| Quiz page | Interactive, timed, 1-of-7 progress bar |
-
-## Free API tiers used
-
-| Service | Model | Free tier |
-|---|---|---|
-| Groq Whisper | `whisper-large-v3-turbo` | 7,200 audio seconds / day |
-| Gemini | `gemini-2.0-flash` | 1,500 requests / day |
-| Groq LLM (fallback) | `llama-3.3-70b-versatile` | free tier |
-
-## Local setup
-
-### Prerequisites
-
-- Node.js 18+
-- Python 3.9+
-- MongoDB (local or Atlas)
-- Redis (for queue mode — optional, falls back to inline)
-- yt-dlp — `pip install yt-dlp`
-
-### 1. Frontend
+## Frontend setup
 
 ```bash
-cd Ai_Lecture_lens
+cd DocuMind
 npm install
-
-# Build once (fast production server, no compile delay)
-npm run build
-npm run start
 ```
 
-For development (slower first-load compile):
+Create `.env.local`:
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:5000/api
+```
+
+Run development server:
+
 ```bash
 npm run dev
 ```
 
-Create `.env.local`:
-```
-NEXT_PUBLIC_API_URL=http://localhost:5000/api
-```
-
-### 2. Backend API
+Build and start production frontend:
 
 ```bash
-cd smart-lecture-ai-backend/backend
+npm run build
+npm run start
+```
+
+## Backend setup
+
+```bash
+cd services/backend
 npm install
 node src/server.js
 ```
 
-Create `.env` (copy from `.env.example`):
-```
+Create `.env` from `.env.example` and configure at minimum:
+
+```env
 PORT=5000
 FRONTEND_URL=http://localhost:3000
-JWT_SECRET=replace-with-strong-secret
+JWT_SECRET=replace_with_strong_secret
 MONGO_URI=mongodb://127.0.0.1:27017/smartlecture
+GEMINI_API_KEY=your_gemini_api_key
+GROQ_API_KEY=your_groq_api_key
+```
+
+Optional backend variables:
+
+```env
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
-
-# AI APIs
-GEMINI_API_KEY=your-gemini-api-key
-GROQ_API_KEY=your-groq-api-key
-
-# Python AI service (optional, used as transcription fallback)
+STORAGE_LOCAL_PATH=./uploads
+PYTHON_AI_URL=http://localhost:8000
 TRANSCRIBE_SERVICE_URL=http://localhost:8000/transcribe
 EXTRACT_SERVICE_URL=http://localhost:8000/extract
 QUIZ_SERVICE_URL=http://localhost:8000/quiz
 SUMMARIZE_SERVICE_URL=http://localhost:8000/summarize
+CLEAN_SERVICE_URL=http://localhost:8000/clean
+CLOUDINARY_CLOUD_NAME=...
+CLOUDINARY_API_KEY=...
+CLOUDINARY_API_SECRET=...
+MAX_QUESTIONS_PER_GENERATION=20
 ```
 
-### 3. Worker (required for queue-based processing)
-
-Run this in a separate terminal alongside the backend:
+Run the BullMQ worker in a separate terminal when Redis queue processing is enabled:
 
 ```bash
-cd smart-lecture-ai-backend/backend
+cd services/backend
 node src/worker.js
 ```
 
-### 4. Python AI service (optional fallback)
+## AI microservice setup
 
-Only needed if Groq Whisper is unavailable. Handles local transcription and frame extraction.
+The Python AI service is optional for document-only workflows, but recommended for transcription, OCR/frame extraction, parsing, and vector storage.
 
 ```bash
-cd smart-lecture-ai-backend/python-ai
+cd services/python-ai
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 python main.py
 ```
 
-Runs on `http://localhost:8000`.
+It runs on `http://localhost:8000` by default.
 
-### Full startup (3 terminals)
+## Commands to run all services
+
+Terminal 1 — backend API:
 
 ```bash
-# Terminal 1 — Backend API
-cd smart-lecture-ai-backend/backend && node src/server.js
-
-# Terminal 2 — Worker (queue processor)
-cd smart-lecture-ai-backend/backend && node src/worker.js
-
-# Terminal 3 — Frontend
-cd Ai_Lecture_lens && npm run start
+cd services/backend
+node src/server.js
 ```
 
-## Getting API keys
+Terminal 2 — worker, if using Redis/BullMQ:
 
-| Key | Where to get it |
-|---|---|
-| `GEMINI_API_KEY` | Google AI Studio — aistudio.google.com |
-| `GROQ_API_KEY` | console.groq.com |
+```bash
+cd services/backend
+node src/worker.js
+```
+
+Terminal 3 — Python AI service, if needed:
+
+```bash
+cd services/python-ai
+python main.py
+```
+
+Terminal 4 — frontend:
+
+```bash
+cd DocuMind
+npm run dev
+```
+
+## API overview
+
+Backend API base: `http://localhost:5000/api`
+
+- `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`
+- `GET/POST /api/documents`, `GET /api/documents/:id`, document analysis/summary/chat/question endpoints
+- `POST /api/quizzes/generate`, `GET /api/quizzes`, `GET /api/quizzes/:id`, `POST /api/quizzes/:id/attempt`, `GET /api/quizzes/history`
+- `GET/POST /api/lectures`, lecture processing endpoints
+- `GET /api/analytics/...`
+
+Python AI service base: `http://localhost:8000`
+
+- `GET /health`
+- `POST /transcribe`
+- `POST /extract`
+- `POST /quiz`
+- `POST /clean`
+- `POST /summarize`
+- `POST /ingest-text`
+- `POST /query-document`
+- `POST /ingest-document`
+- `POST /parse-document`
+- `DELETE /delete-document/{document_id}`
+
+## Validation commands
+
+Frontend typecheck:
+
+```bash
+npx tsc --noEmit
+```
+
+Backend tests:
+
+```bash
+npm test
+# or
+npm --prefix services/backend test
+```
+
+Backend syntax check:
+
+```bash
+node --check services/backend/src/server.js
+```
 
 ## Notes
 
-- The frontend must be built (`npm run build`) before using `npm run start`. The dev server (`npm run dev`) compiles lazily and can return 404s for JS chunks on first load if interrupted.
-- The worker must be running for queued lectures to process. Without it, uploads sit in "Queued" status.
-- Stalled jobs (from a crashed worker) can be re-triggered via the "Retry Processing" button on the lecture detail page.
-- Quiz attempts are written to both the `QuizAttempt` collection and the user profile summary used by the dashboard.
-- Failed lecture processing is stored on the lecture record so the UI shows honest error states rather than silently empty pages.
+- Keep real secrets in `.env` / `.env.local` or your deployment secret manager, not in `.env.example`.
+- Do not commit `node_modules`, `.next`, uploads, `chroma_db`, virtual environments, or build artifacts.
+- Existing API endpoint paths are intentionally stable; only project naming and folder references were updated.

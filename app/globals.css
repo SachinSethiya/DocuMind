@@ -3,7 +3,7 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ─── AI Lecture Lens — Warm Academic Light Theme (Anthropic × Skilljar) ─── */
+/* ─── DocuMind — Warm Academic Light Theme (Anthropic × Skilljar) ─── */
 :root {
   /* Backgrounds */
   --background: oklch(0.982 0.005 80);        /* warm cream #FAFAF7 */

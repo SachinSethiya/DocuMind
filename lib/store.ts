@@ -76,9 +76,10 @@ export const useAppStore = create<AppStoreState>()(
       async login(email, password) {
         try {
           const data = await apiService.login(email, password)
-          if (data.token) {
-            localStorage.setItem("token", data.token)
+          if (!data.token || !data.user) {
+            throw new Error("Login response did not include an authentication token.")
           }
+          localStorage.setItem("token", data.token)
 
           set({
             user: data.user,
@@ -88,16 +89,18 @@ export const useAppStore = create<AppStoreState>()(
           return true
         } catch (error) {
           console.error("Login failed:", error)
-          return false
+          set({ isLoading: false })
+          throw error
         }
       },
 
       async signup(name, email, password) {
         try {
           const data = await apiService.signup(name, email, password)
-          if (data.token) {
-            localStorage.setItem("token", data.token)
+          if (!data.token || !data.user) {
+            throw new Error("Signup response did not include an authentication token.")
           }
+          localStorage.setItem("token", data.token)
 
           set({
             user: data.user,
@@ -107,7 +110,8 @@ export const useAppStore = create<AppStoreState>()(
           return true
         } catch (error) {
           console.error("Signup failed:", error)
-          return false
+          set({ isLoading: false })
+          throw error
         }
       },
 

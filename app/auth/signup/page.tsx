@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
 import { useAppStore } from "@/lib/store"
+import { getApiErrorMessage } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -30,7 +31,7 @@ export default function SignupPage() {
       const ok = await signup(form.name, form.email, form.password)
       if (ok) { toast.success("Account created!"); router.push("/dashboard") }
       else setError("Failed to create account. Please try again.")
-    } catch { setError("Something went wrong. Please try again.") }
+    } catch (error) { setError(getApiErrorMessage(error, "Unable to create account. Please try again.")) }
     finally { setLoading(false) }
   }
 
@@ -43,12 +44,12 @@ export default function SignupPage() {
           <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
             <GraduationCap className="h-3.5 w-3.5 text-primary-foreground" />
           </div>
-          <span className="text-[14px] font-semibold text-foreground">Lecture Lens</span>
+          <span className="text-[14px] font-semibold text-foreground">DocuMind</span>
         </div>
 
         <div>
           <h2 className="text-[32px] font-bold leading-tight tracking-tight text-foreground mb-4">
-            Start your AI<br />learning journey.
+            Give Notes<br />Get Insights.
           </h2>
           <p className="text-[14px] text-muted-foreground leading-relaxed max-w-xs">
             Join students using AI to study smarter — not harder.
@@ -56,7 +57,7 @@ export default function SignupPage() {
 
           <div className="mt-10 space-y-3">
             {[
-              "Upload any lecture format",
+              // "Upload any lecture format",
               "AI summaries in seconds",
               "Auto-generated MCQ quizzes",
               "Peer rankings & analytics",

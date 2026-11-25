@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
 import { useAppStore } from "@/lib/store"
+import { getApiErrorMessage } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -26,8 +27,8 @@ export default function LoginPage() {
       const ok = await login(form.email, form.password)
       if (ok) toast.success("Welcome back!")
       else setError("Invalid email or password.")
-    } catch {
-      setError("Something went wrong. Please try again.")
+    } catch (error) {
+      setError(getApiErrorMessage(error, "Unable to sign in. Please try again."))
     } finally { setLoading(false) }
   }
 
@@ -38,14 +39,14 @@ export default function LoginPage() {
       <div className="hidden lg:flex lg:w-[42%] bg-secondary border-r border-border flex-col justify-between p-10">
         <div className="flex items-center gap-2.5">
           <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
-            <GraduationCap className="h-3.5 w-3.5 text-primary-foreground" />
+            <GraduationCap className="h-4 w-4 text-primary-foreground" />
           </div>
-          <span className="text-[14px] font-semibold text-foreground">Lecture Lens</span>
+          <span className="text-[20px] font-semibold text-foreground">DocuMind</span>
         </div>
 
         <div>
           <h2 className="text-[32px] font-bold leading-tight tracking-tight text-foreground mb-4">
-            Your lectures,<br />intelligently studied.
+            Give Notes,<br />Get Insights.
           </h2>
           <p className="text-[14px] text-muted-foreground leading-relaxed max-w-xs">
             AI transcripts, smart summaries, and auto-generated quizzes — all from a single upload.
@@ -53,7 +54,7 @@ export default function LoginPage() {
 
           <div className="mt-10 space-y-3">
             {[
-              "Upload video, audio, or slides",
+              // "Upload video, audio, or slides",
               "Get AI summaries in seconds",
               "Test yourself with auto-quizzes",
               "Track performance over time",

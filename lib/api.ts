@@ -24,6 +24,22 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
+export function getApiErrorMessage(error: unknown, fallback: string) {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data as
+      | { message?: unknown; error?: unknown; details?: unknown }
+      | undefined
+    const message = data?.message ?? data?.error ?? data?.details
+    if (typeof message === "string" && message.trim()) return message
+    if (!error.response) {
+      return "Cannot reach the server. Make sure the backend is running."
+    }
+    return error.message || fallback
+  }
+  if (error instanceof Error && error.message) return error.message
+  return fallback
+}
+
 export const apiService = {
   // ── Authentication ──────────────────────────────────────────
   async login(email: string, password: string): Promise<{ token: string; user: User }> {
